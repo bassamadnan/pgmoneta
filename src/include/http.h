@@ -54,6 +54,7 @@ struct http
    int socket;    /**< The socket */
    char* headers; /**< The HTTP headers */
    char* body;    /**< The HTTP body */
+   SSL* ssl;
 };
 
 /**

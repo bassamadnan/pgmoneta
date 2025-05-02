@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <openssl/ssl.h>
 
 int pgmoneta_http_curl_test(void)
 {
@@ -52,9 +53,8 @@ int pgmoneta_http_curl_test(void)
   return 0;
 }
 
-
 static int
-build_http_header(int method, const char* hostname, const char* path, char** request, bool keep_alive)
+build_http_header(int method, const char* hostname, const char* path, char** request)
 {
    printf("Building HTTP header, method=%d, path=%s\n", method, path);
    char* r = NULL;
@@ -95,11 +95,8 @@ build_http_header(int method, const char* hostname, const char* path, char** req
       printf("Added accept header\n");
    }
    
-   if(!keep_alive){
-      r = pgmoneta_append(r, "Connection: close\r\n");
-      printf("Added connection close\n");
-   }
-
+   r = pgmoneta_append(r, "Connection: close\r\n");
+   printf("Added connection close\n");
 
    r = pgmoneta_append(r, "\r\n");
    printf("Added end of headers\n");
@@ -181,7 +178,7 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    const char* endpoint = path ? path : "/get";
 
    printf("Building HTTP header\n");
-   if (build_http_header(HTTP_GET, hostname, endpoint, &request, false))
+   if (build_http_header(HTTP_GET, hostname, endpoint, &request))
    {
       printf("Failed to build HTTP header\n");
       goto error;
@@ -209,7 +206,7 @@ req:
    if (error < 5)
    {
       printf("Attempt %d to write message on socket: %d\n", error + 1, http->socket);
-      status = pgmoneta_write_message(NULL, http->socket, msg_request);
+      status = pgmoneta_write_message(http->ssl, http->socket, msg_request);
       printf("Write status: %d\n", status);
       if (status != MESSAGE_STATUS_OK)
       {
@@ -227,7 +224,7 @@ req:
    printf("Request sent successfully, reading response\n");
    response = NULL;
 
-   status = pgmoneta_read_block_message(NULL, http->socket, &msg_response);
+   status = pgmoneta_read_block_message(http->ssl, http->socket, &msg_response);
    printf("Read status: %d, msg_response pointer = %p\n", status, (void*)msg_response);
    
    if (status == MESSAGE_STATUS_OK && msg_response && msg_response->data)
@@ -278,50 +275,196 @@ error:
    return 1;
 }
 
+int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result)
+{
+    printf("Connecting to %s:%d (secure: %d)\n", hostname, port, secure);
+    struct http* h = NULL;
+    int socket_fd = -1;
+    SSL* ssl = NULL;
+    
+    h = (struct http*) malloc(sizeof(struct http));
+    if(h == NULL)
+    {
+        pgmoneta_log_error("Failed to allocate HTTP structure");
+        printf("Failed to allocate HTTP structure\n");
+        return 1;
+    }
+    
+    memset(h, 0, sizeof(struct http));
+    
+    if (pgmoneta_connect(hostname, port, &socket_fd))
+    {
+       pgmoneta_log_error("Failed to connect to %s:%d", hostname, port);
+       printf("Failed to connect to %s:%d\n", hostname, port);
+       free(h);
+       return 1;
+    }
+    
+    h->socket = socket_fd;
+    
+    if (secure)
+    {
+        SSL_CTX* ctx = NULL;
+        
+        if (pgmoneta_create_ssl_ctx(true, &ctx))
+        {
+            pgmoneta_log_error("Failed to create SSL context");
+            printf("Failed to create SSL context\n");
+            pgmoneta_disconnect(socket_fd);
+            free(h);
+            return 1;
+        }
+        
+        if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) == 0)
+        {
+            pgmoneta_log_error("Failed to set minimum TLS version");
+            printf("Failed to set minimum TLS version\n");
+            SSL_CTX_free(ctx);
+            pgmoneta_disconnect(socket_fd);
+            free(h);
+            return 1;
+        }
+        
+        ssl = SSL_new(ctx);
+        if (ssl == NULL)
+        {
+            pgmoneta_log_error("Failed to create SSL structure");
+            printf("Failed to create SSL structure\n");
+            SSL_CTX_free(ctx);
+            pgmoneta_disconnect(socket_fd);
+            free(h);
+            return 1;
+        }
+        
+        if (SSL_set_fd(ssl, socket_fd) == 0)
+        {
+            pgmoneta_log_error("Failed to set SSL file descriptor");
+            printf("Failed to set SSL file descriptor\n");
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            pgmoneta_disconnect(socket_fd);
+            free(h);
+            return 1;
+        }
+        
+        int connect_result;
+        do
+        {
+            connect_result = SSL_connect(ssl);
+            
+            if (connect_result != 1)
+            {
+                int err = SSL_get_error(ssl, connect_result);
+                switch (err)
+                {
+                    case SSL_ERROR_WANT_READ:
+                    case SSL_ERROR_WANT_WRITE:
+                        // These errors are normal during connection establishment
+                        continue;
+                    default:
+                        pgmoneta_log_error("SSL connection failed: %s", ERR_error_string(err, NULL));
+                        printf("SSL connection failed: %s\n", ERR_error_string(err, NULL));
+                        SSL_free(ssl);
+                        SSL_CTX_free(ctx);
+                        pgmoneta_disconnect(socket_fd);
+                        free(h);
+                        return 1;
+                }
+            }
+        } while (connect_result != 1);
+        
+        h->ssl = ssl;
+        printf("SSL connection established\n");
+    }
+    
+    printf("Connected, socket: %d, ssl: %p\n", h->socket, (void*)h->ssl);
+    *result = h;
+    
+    return 0;
+}
+
+void pgmoneta_http_disconnect(struct http* http)
+{
+    if (http != NULL)
+    {
+        printf("Disconnecting HTTP connection\n");
+        
+        if (http->ssl != NULL)
+        {
+            pgmoneta_close_ssl(http->ssl);
+            http->ssl = NULL;
+        }
+        
+        if (http->socket != -1)
+        {
+            pgmoneta_disconnect(http->socket);
+            http->socket = -1;
+        }
+        
+        if (http->headers != NULL)
+        {
+            free(http->headers);
+            http->headers = NULL;
+        }
+        
+        if (http->body != NULL)
+        {
+            free(http->body);
+            http->body = NULL;
+        }
+    }
+}
+
 int pgmoneta_http_test(void)
 {
     printf("Starting pgmoneta_http_test\n");
     int status;
     struct http* h = NULL;
     
-    printf("Allocating http structure\n");
-    h = (struct http*) malloc(sizeof(struct http));
-    if(h == NULL)
+    const char* hostname = "postman-echo.com";
+    int port = 80;
+    bool secure = false;
+    
+    if (pgmoneta_http_connect(hostname, port, secure, &h))
     {
-        pgmoneta_log_error("Failed to allocate to HTTP");
-        printf("Failed to allocate HTTP structure\n");
+        printf("Failed to connect to %s:%d\n", hostname, port);
         return 1;
     }
-    
-    printf("Initializing http structure\n");
-    memset(h, 0, sizeof(struct http));
-    
-    const char* hostname = "postman-echo.com";
-    printf("Connecting to %s:80\n", hostname);
-    if (pgmoneta_connect(hostname, 80, &h->socket))
-    {
-       pgmoneta_log_error("Failed to connect to %s:%d", hostname, 80);
-       printf("Failed to connect to %s:80\n", hostname);
-       free(h);
-       return 1;
-    }
-    printf("Connected, socket: %d\n", h->socket);
 
     printf("Calling pgmoneta_http_get\n");
     status = pgmoneta_http_get(h, hostname, "/get");
     printf("pgmoneta_http_get returned: %d\n", status);
 
-    printf("Disconnecting socket\n");
-    pgmoneta_disconnect(h->socket);
-    
-    printf("Freeing http structure\n");
-    if (h->headers != NULL)
-        free(h->headers);
-    if (h->body != NULL)
-        free(h->body);
-    
+    pgmoneta_http_disconnect(h);
     free(h);
     
     printf("Finished pgmoneta_http_test\n");
+    return 0;
+}
+
+int pgmoneta_https_test(void)
+{
+    printf("Starting pgmoneta_https_test\n");
+    int status;
+    struct http* h = NULL;
+    
+    const char* hostname = "postman-echo.com";
+    int port = 443;  // HTTPS port
+    bool secure = true;
+    
+    if (pgmoneta_http_connect(hostname, port, secure, &h))
+    {
+        printf("Failed to connect to %s:%d\n", hostname, port);
+        return 1;
+    }
+
+    printf("Calling pgmoneta_http_get\n");
+    status = pgmoneta_http_get(h, hostname, "/get");
+    printf("pgmoneta_http_get returned: %d\n", status);
+
+    pgmoneta_http_disconnect(h);
+    free(h);
+    
+    printf("Finished pgmoneta_https_test\n");
     return 0;
 }
