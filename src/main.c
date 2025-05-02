@@ -687,9 +687,9 @@ main(int argc, char** argv)
          pgmoneta_memory_init();
          // pgmoneta_http_test();
          // pgmoneta_https_test();
-         pgmoneta_http_post_test();
+         // pgmoneta_http_post_test();
          // pgmoneta_http_put_test();
-         // pgmoneta_http_put_file_test();
+         pgmoneta_http_put_file_test();
          // pgmoneta_memory_destroy();
          exit(0);
       }

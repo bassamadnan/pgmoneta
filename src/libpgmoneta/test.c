@@ -53,8 +53,16 @@ int pgmoneta_http_curl_test(void)
   return 0;
 }
 
+void pgmoneta_http_add_header2(struct http* http, const char* name, const char* value)
+{
+   http->request_headers = pgmoneta_append(http->request_headers, name);
+   http->request_headers = pgmoneta_append(http->request_headers, ": ");
+   http->request_headers = pgmoneta_append(http->request_headers, value);
+   http->request_headers = pgmoneta_append(http->request_headers, "\r\n");
+}
+
 static int
-build_http_header(int method, const char* hostname, const char* path, char** request)
+build_http_header(int method, const char* path, char** request)
 {
    printf("Building HTTP header, method=%d, path=%s\n", method, path);
    char* r = NULL;
@@ -81,25 +89,6 @@ build_http_header(int method, const char* hostname, const char* path, char** req
    
    r = pgmoneta_append(r, " HTTP/1.1\r\n");
    printf("Added HTTP version: %s\n", r);
-
-   r = pgmoneta_append(r, "Host: ");
-   r = pgmoneta_append(r, hostname);
-   r = pgmoneta_append(r, "\r\n");
-   printf("Added host\n");
-
-   r = pgmoneta_append(r, "User-Agent: pgmoneta4/4\r\n");
-   printf("Added user agent\n");
-
-   if (method == HTTP_GET) {
-      r = pgmoneta_append(r, "Accept: text/*\r\n");
-      printf("Added accept header\n");
-   }
-   
-   r = pgmoneta_append(r, "Connection: close\r\n");
-   printf("Added connection close\n");
-
-   r = pgmoneta_append(r, "\r\n");
-   printf("Added end of headers\n");
 
    *request = r;
    printf("Finished building request headers: %s\n", r);
@@ -174,17 +163,29 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    int error = 0;
    int status;
    char* request = NULL;
+   char* full_request = NULL;
    char* response = NULL;
    const char* endpoint = path ? path : "/get";
 
    printf("Building HTTP header\n");
-   if (build_http_header(HTTP_GET, hostname, endpoint, &request))
+   if (build_http_header(HTTP_GET, endpoint, &request))
    {
       printf("Failed to build HTTP header\n");
       goto error;
    }
 
-   printf("HTTP request: %s\n", request);
+   // Add standard headers
+   pgmoneta_http_add_header2(http, "Host", hostname);
+   pgmoneta_http_add_header2(http, "User-Agent", "pgmoneta4/4");
+   pgmoneta_http_add_header2(http, "Accept", "text/*");
+   pgmoneta_http_add_header2(http, "Connection", "close");
+
+   // Combine the base request with custom headers
+   full_request = pgmoneta_append(NULL, request);
+   full_request = pgmoneta_append(full_request, http->request_headers);
+   full_request = pgmoneta_append(full_request, "\r\n");
+
+   printf("HTTP request: %s\n", full_request);
    
    printf("Allocating msg_request\n");
    msg_request = (struct message*)malloc(sizeof(struct message));
@@ -197,8 +198,8 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    memset(msg_request, 0, sizeof(struct message));
 
    printf("Setting msg_request data\n");
-   msg_request->data = request;
-   msg_request->length = strlen(request) + 1;
+   msg_request->data = full_request;
+   msg_request->length = strlen(full_request) + 1;
 
    error = 0;
    printf("Sending request\n");
@@ -257,8 +258,13 @@ req:
 
    printf("Freeing resources\n");
    free(request);
+   free(full_request);
    free(response);
    free(msg_request);
+   
+   // Clear request headers for next request
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished pgmoneta_http_get successfully\n");
    return 0;
@@ -266,9 +272,14 @@ req:
 error:
    printf("Error in pgmoneta_http_get, cleaning up\n");
    if (request) free(request);
+   if (full_request) free(full_request);
    if (response) free(response);
    if (msg_request) free(msg_request);
    if (msg_response) pgmoneta_free_message(msg_response);
+   
+   // Clear request headers on error
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished error cleanup\n");
    return 1;
@@ -410,6 +421,12 @@ void pgmoneta_http_disconnect(struct http* http)
             free(http->body);
             http->body = NULL;
         }
+        
+        if (http->request_headers != NULL)
+        {
+            free(http->request_headers);
+            http->request_headers = NULL;
+        }
     }
 }
 
@@ -480,16 +497,25 @@ int pgmoneta_http_post(struct http* http, const char* hostname, const char* path
    char content_length[32];
 
    printf("Building HTTP header\n");
-   if (build_http_header(HTTP_POST, hostname, path, &request))
+   if (build_http_header(HTTP_POST, path, &request))
    {
       printf("Failed to build HTTP header\n");
       goto error;
    }
 
-   sprintf(content_length, "Content-Length: %zu\r\n", length);
+   // Add standard headers
+   pgmoneta_http_add_header2(http, "Host", hostname);
+   pgmoneta_http_add_header2(http, "User-Agent", "pgmoneta4/4");
+   pgmoneta_http_add_header2(http, "Connection", "close");
+   
+   sprintf(content_length, "%zu", length);
+   pgmoneta_http_add_header2(http, "Content-Length", content_length);
+   pgmoneta_http_add_header2(http, "Content-Type", "application/x-www-form-urlencoded");
+   
+   // Combine the base request with custom headers
    full_request = pgmoneta_append(NULL, request);
-   full_request = pgmoneta_append(full_request, content_length);
-   full_request = pgmoneta_append(full_request, "Content-Type: application/x-www-form-urlencoded\r\n\r\n");
+   full_request = pgmoneta_append(full_request, http->request_headers);
+   full_request = pgmoneta_append(full_request, "\r\n");
    
    if (data && length > 0)
    {
@@ -572,6 +598,10 @@ req:
    free(full_request);
    free(response);
    free(msg_request);
+   
+   // Clear request headers for next request
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished pgmoneta_http_post successfully\n");
    return 0;
@@ -583,6 +613,10 @@ error:
    if (response) free(response);
    if (msg_request) free(msg_request);
    if (msg_response) pgmoneta_free_message(msg_response);
+   
+   // Clear request headers on error
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished error cleanup\n");
    return 1;
@@ -601,20 +635,31 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
    char content_length[32];
 
    printf("Building HTTP header\n");
-   if (build_http_header(HTTP_PUT, hostname, path, &request))
+   if (build_http_header(HTTP_PUT, path, &request))
    {
       printf("Failed to build HTTP header\n");
       goto error;
    }
 
-   sprintf(content_length, "Content-Length: %zu\r\n", length);
-   full_request = pgmoneta_append(NULL, request);
-   full_request = pgmoneta_append(full_request, content_length);
-   full_request = pgmoneta_append(full_request, "Content-Type: application/octet-stream\r\n\r\n");
+   // Add standard headers
+   pgmoneta_http_add_header2(http, "Host", hostname);
+   pgmoneta_http_add_header2(http, "User-Agent", "pgmoneta4/4");
+   pgmoneta_http_add_header2(http, "Connection", "close");
    
+   sprintf(content_length, "%zu", length);
+   pgmoneta_http_add_header2(http, "Content-Length", content_length);
+   pgmoneta_http_add_header2(http, "Content-Type", "application/octet-stream");
+   
+   // Combine the base request with custom headers
+   full_request = pgmoneta_append(NULL, request);
+   full_request = pgmoneta_append(full_request, http->request_headers);
+   full_request = pgmoneta_append(full_request, "\r\n");
+   
+   // Calculate total size needed
    size_t headers_len = strlen(full_request);
    size_t total_len = headers_len + length;
    
+   // Create full request with body
    char* complete_request = malloc(total_len + 1);
    if (complete_request == NULL)
    {
@@ -622,16 +667,19 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
       goto error;
    }
    
+   // Copy headers
    memcpy(complete_request, full_request, headers_len);
    
+   // Copy data if provided
    if (data && length > 0)
    {
       memcpy(complete_request + headers_len, data, length);
    }
    
+   // Ensure null termination (for safety, though binary data might contain nulls)
    complete_request[total_len] = '\0';
 
-   printf("HTTP request headers: %s\n", request);
+   printf("HTTP request headers: %s\n", full_request);
    printf("Data length: %zu\n", length);
    
    printf("Allocating msg_request\n");
@@ -708,8 +756,12 @@ req:
    free(request);
    free(full_request);
    free(response);
-   free(msg_request->data);
+   free(msg_request->data); // This is the complete_request buffer
    free(msg_request);
+   
+   // Clear request headers for next request
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished pgmoneta_http_put successfully\n");
    return 0;
@@ -725,6 +777,10 @@ error:
       free(msg_request);
    }
    if (msg_response) pgmoneta_free_message(msg_response);
+   
+   // Clear request headers on error
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished error cleanup\n");
    return 1;
@@ -750,16 +806,25 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    }
 
    printf("Building HTTP header\n");
-   if (build_http_header(HTTP_PUT, hostname, path, &request))
+   if (build_http_header(HTTP_PUT, path, &request))
    {
       printf("Failed to build HTTP header\n");
       goto error;
    }
 
-   sprintf(content_length, "Content-Length: %zu\r\n", length);
+   // Add standard headers
+   pgmoneta_http_add_header2(http, "Host", hostname);
+   pgmoneta_http_add_header2(http, "User-Agent", "pgmoneta4/4");
+   pgmoneta_http_add_header2(http, "Connection", "close");
+   
+   sprintf(content_length, "%zu", length);
+   pgmoneta_http_add_header2(http, "Content-Length", content_length);
+   pgmoneta_http_add_header2(http, "Content-Type", "application/octet-stream");
+   
+   // Combine the base request with custom headers
    header_part = pgmoneta_append(NULL, request);
-   header_part = pgmoneta_append(header_part, content_length);
-   header_part = pgmoneta_append(header_part, "Content-Type: application/octet-stream\r\n\r\n");
+   header_part = pgmoneta_append(header_part, http->request_headers);
+   header_part = pgmoneta_append(header_part, "\r\n");
 
    printf("HTTP request headers: %s\n", header_part);
    printf("File length: %zu\n", length);
@@ -867,6 +932,10 @@ req:
    free(file_buffer);
    free(msg_request->data);
    free(msg_request);
+   
+   // Clear request headers for next request
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished pgmoneta_http_put_file successfully\n");
    return 0;
@@ -883,6 +952,10 @@ error:
       free(msg_request);
    }
    if (msg_response) pgmoneta_free_message(msg_response);
+   
+   // Clear request headers on error
+   free(http->request_headers);
+   http->request_headers = NULL;
 
    printf("Finished error cleanup\n");
    return 1;

@@ -55,6 +55,7 @@ struct http
    char* headers; /**< The HTTP headers */
    char* body;    /**< The HTTP body */
    SSL* ssl;
+   char* request_headers;
 };
 
 /**
