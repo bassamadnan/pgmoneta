@@ -1,4 +1,22 @@
+
+// #ifndef PGMONETA_HTTP_H
+// #define PGMONETA_HTTP_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <pgmoneta.h>
+#include <openssl/ssl.h>
+
+#include <stdbool.h>
+#include <stdio.h>
 #include <http.h>
+
+#define HTTP_GET 0
+#define HTTP_POST 1
+#define HTTP_PUT 2
+
 
 int pgmoneta_http_curl_test(void);
 
@@ -6,8 +24,78 @@ int pgmoneta_http_test(void);
 
 int pgmoneta_https_test(void);
 
-// static int
-// create_ssl_client(SSL_CTX* ctx, char* key, char* cert, char* root, int socket, SSL** ssl);
-#define HTTP_GET  1
-#define HTTP_POST 2
-#define HTTP_PUT  3
+/**
+ * Connect to an HTTP/HTTPS server
+ * @param hostname The host to connect to
+ * @param port The port number
+ * @param secure Use SSL if true
+ * @param result The resulting HTTP structure
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result);
+
+/**
+ * Disconnect and clean up HTTP resources
+ * @param http The HTTP structure
+ */
+void
+pgmoneta_http_disconnect(struct http* http);
+
+/**
+ * Perform HTTP GET request
+ * @param http The HTTP structure
+ * @param hostname The hostname for the Host header
+ * @param path The path for the request
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgmoneta_http_get(struct http* http, const char* hostname, const char* path);
+
+/**
+ * Perform HTTP POST request
+ * @param http The HTTP structure
+ * @param hostname The hostname for the Host header
+ * @param path The path for the request
+ * @param data The data to send
+ * @param length The length of the data
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgmoneta_http_post(struct http* http, const char* hostname, const char* path, 
+                 const char* data, size_t length);
+
+/**
+ * Perform HTTP PUT request
+ * @param http The HTTP structure
+ * @param hostname The hostname for the Host header
+ * @param path The path for the request
+ * @param data The data to upload
+ * @param length The length of the data
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgmoneta_http_put(struct http* http, const char* hostname, const char* path, 
+                 const void* data, size_t length);
+
+/**
+ * Perform HTTP PUT request with a file
+ * @param http The HTTP structure
+ * @param hostname The hostname for the Host header
+ * @param path The path for the request
+ * @param file The file to upload
+ * @param length The length of the file
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, 
+                      FILE* file, size_t length);
+
+int pgmoneta_http_post_test(void);
+int pgmoneta_http_put_test(void);
+int pgmoneta_http_put_file_test(void);
+#ifdef __cplusplus
+}
+#endif
+
+// #endif
