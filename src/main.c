@@ -56,6 +56,7 @@
 #include <verify.h>
 #include <wal.h>
 #include <zstandard_compression.h>
+#include <test.h>
 
 /* system */
 #include <err.h>
@@ -233,6 +234,7 @@ usage(void)
 int
 main(int argc, char** argv)
 {
+   // pgmoneta_http_curl_test();
    char* configuration_path = NULL;
    char* users_path = NULL;
    char* admins_path = NULL;
@@ -680,6 +682,19 @@ main(int argc, char** argv)
 
    if (!offline)
    {
+      if (!fork())
+      {
+         pgmoneta_memory_init();
+         pgmoneta_http_test();
+         // pgmoneta_memory_destroy();
+         exit(0);
+      }
+   }
+
+   if (!offline)
+   {
+      // pgmoneta_http_curl_test();
+      // pgmoneta_http_test();
       pgmoneta_log_info("Started on %s", config->host);
    }
    else

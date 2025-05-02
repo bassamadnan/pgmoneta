@@ -45,6 +45,17 @@ extern "C" {
 #define HTTP_GET 0
 #define HTTP_PUT 1
 
+/** @struct http
+ * Defines a HTTP interaction
+ */
+struct http
+{
+   int endpoint;  /**< The endpoint */
+   int socket;    /**< The socket */
+   char* headers; /**< The HTTP headers */
+   char* body;    /**< The HTTP body */
+};
+
 /**
  * Add a header
  * @param chunk A linked list of strings
