@@ -130,13 +130,11 @@ extract_headers_body(char* response, struct http* http)
          {
             if (header)
             {
-               printf("Adding to headers: %s\n", p);
                http->headers = pgmoneta_append(http->headers, p);
                http->headers = pgmoneta_append_char(http->headers, '\n');
             }
             else
             {
-               printf("Adding to body: %s\n", p);
                http->body = pgmoneta_append(http->body, p);
                http->body = pgmoneta_append_char(http->body, '\n');
             }
@@ -786,7 +784,7 @@ error:
    return 1;
 }
 
-int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t length)
+int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size)
 {
    printf("Starting pgmoneta_http_put_file\n");
    struct message* msg_request = NULL;
@@ -817,7 +815,7 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    pgmoneta_http_add_header2(http, "User-Agent", "pgmoneta4/4");
    pgmoneta_http_add_header2(http, "Connection", "close");
    
-   sprintf(content_length, "%zu", length);
+   sprintf(content_length, "%zu", file_size);
    pgmoneta_http_add_header2(http, "Content-Length", content_length);
    pgmoneta_http_add_header2(http, "Content-Type", "application/octet-stream");
    
@@ -827,24 +825,30 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    header_part = pgmoneta_append(header_part, "\r\n");
 
    printf("HTTP request headers: %s\n", header_part);
-   printf("File length: %zu\n", length);
+   printf("File size: %zu\n", file_size);
    
+   // Make sure we're at the beginning of the file
    rewind(file);
-   file_buffer = malloc(length);
+   
+   // Allocate memory for the file content
+   file_buffer = malloc(file_size);
    if (file_buffer == NULL)
    {
-      printf("Failed to allocate memory for file content\n");
+      printf("Failed to allocate memory for file content: %zu bytes\n", file_size);
       goto error;
    }
    
-   size_t bytes_read = fread(file_buffer, 1, length, file);
-   if (bytes_read != length)
+   // Read the entire file into memory
+   size_t bytes_read = fread(file_buffer, 1, file_size, file);
+   if (bytes_read != file_size)
    {
-      printf("Failed to read entire file. Expected %zu bytes, got %zu\n", length, bytes_read);
+      printf("Failed to read entire file. Expected %zu bytes, got %zu\n", file_size, bytes_read);
       goto error;
    }
    
-   printf("Allocating msg_request\n");
+   printf("Read %zu bytes from file\n", bytes_read);
+   
+   // Allocate and set up message request
    msg_request = (struct message*)malloc(sizeof(struct message));
    if (msg_request == NULL)
    {
@@ -854,24 +858,33 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
 
    memset(msg_request, 0, sizeof(struct message));
 
+   // Get the header length and total message length
    size_t header_len = strlen(header_part);
-   size_t total_len = header_len + length;
+   size_t total_len = header_len + file_size;
    
+   // Allocate memory for the full request (headers + file data)
    char* full_request = malloc(total_len + 1);
    if (full_request == NULL)
    {
-      printf("Failed to allocate memory for full request\n");
+      printf("Failed to allocate memory for full request: %zu bytes\n", total_len + 1);
       goto error;
    }
    
+   // Copy headers to the request buffer
    memcpy(full_request, header_part, header_len);
-   memcpy(full_request + header_len, file_buffer, length);
+   
+   // Copy file content after the headers
+   memcpy(full_request + header_len, file_buffer, file_size);
+   
+   // Add null terminator (not strictly needed for binary data, but safer)
    full_request[total_len] = '\0';
    
-   printf("Setting msg_request data\n");
+   // Set up the message
+   printf("Setting msg_request data, total size: %zu\n", total_len);
    msg_request->data = full_request;
-   msg_request->length = total_len + 1;
+   msg_request->length = total_len;
 
+   // Attempt to send the request
    error = 0;
    printf("Sending request\n");
 req:
@@ -896,6 +909,7 @@ req:
    printf("Request sent successfully, reading response\n");
    response = NULL;
 
+   // Read the response
    status = pgmoneta_read_block_message(http->ssl, http->socket, &msg_response);
    printf("Read status: %d, msg_response pointer = %p\n", status, (void*)msg_response);
    
@@ -906,7 +920,7 @@ req:
       pgmoneta_free_message(msg_response);
    }
    
-   printf("Finished reading response blocks\n");
+   printf("Finished reading response\n");
    
    if (response == NULL) {
       printf("ERROR: No response data collected\n");
@@ -915,6 +929,7 @@ req:
    
    printf("Full response: %s\n", response);
 
+   // Extract headers and body from response
    printf("Extracting headers and body\n");
    if (extract_headers_body(response, http))
    {
@@ -922,9 +937,21 @@ req:
       goto error;
    }
 
+   // Check HTTP status code
+   int status_code = 0;
+   if (http->headers && sscanf(http->headers, "HTTP/1.1 %d", &status_code) == 1) {
+      printf("HTTP status code: %d\n", status_code);
+      if (status_code >= 200 && status_code < 300) {
+         printf("HTTP request successful\n");
+      } else {
+         printf("HTTP request failed with status code: %d\n", status_code);
+      }
+   }
+
    printf("HTTP Headers:\n%s\n", http->headers ? http->headers : "NULL");
    printf("HTTP Body:\n%s\n", http->body ? http->body : "NULL");
 
+   // Free resources
    printf("Freeing resources\n");
    free(request);
    free(header_part);
@@ -937,8 +964,8 @@ req:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished pgmoneta_http_put_file successfully\n");
-   return 0;
+   printf("Finished pgmoneta_http_put_file with status code: %d\n", status_code);
+   return (status_code >= 200 && status_code < 300) ? 0 : 1;
 
 error:
    printf("Error in pgmoneta_http_put_file, cleaning up\n");
@@ -960,6 +987,7 @@ error:
    printf("Finished error cleanup\n");
    return 1;
 }
+
 
 int pgmoneta_http_post_test(void)
 {
@@ -1063,4 +1091,260 @@ int pgmoneta_http_put_file_test(void)
     
     printf("Finished pgmoneta_http_put_file_test\n");
     return 0;
+}
+
+int pgmoneta_s3_upload_test(void)
+{
+    printf("Starting pgmoneta_s3_test\n");
+    
+    // Hardcoded S3 configuration (for testing only)
+    const char* s3_aws_region = "DO NOT TRY";
+    const char* s3_access_key_id = "DO NOT TRY";
+    const char* s3_secret_access_key = "DO NOT TRY";
+    const char* s3_bucket = "DO NOT TRY";
+    const char* s3_base_dir = "DO NOT TRY";
+    
+    // Temp file & test data
+    char* temp_filename = "/tmp/pgmoneta_s3_test_file.txt";
+    const char* test_content = "This is a test file for pgMoneta S3 upload functionality.\n"
+                               "This file was created for testing the custom HTTP implementation.\n"
+                               "The timestamp is: ";
+    
+    // Create a unique test file with timestamp
+    FILE* test_file = fopen(temp_filename, "w");
+    if (test_file == NULL) {
+        printf("Failed to create test file\n");
+        return 1;
+    }
+    
+    fputs(test_content, test_file);
+    
+    // Add timestamp for uniqueness
+    time_t now = time(NULL);
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    fputs(time_str, test_file);
+    
+    fclose(test_file);
+    
+    // Get the file size
+    struct stat file_stat;
+    if (stat(temp_filename, &file_stat) != 0) {
+        printf("Failed to get file stats\n");
+        return 1;
+    }
+    size_t file_size = file_stat.st_size;
+    printf("Test file created with size: %zu bytes\n", file_size);
+    
+    // Reopen the file for reading
+    test_file = fopen(temp_filename, "rb");
+    if (test_file == NULL) {
+        printf("Failed to open test file for reading\n");
+        return 1;
+    }
+    
+    // Generate a unique object key for S3
+    char object_key[256];
+    sprintf(object_key, "%s/test_%ld.txt", s3_base_dir, (long)now);
+    printf("S3 object key: %s\n", object_key);
+    
+    // Now set up the S3 request
+    struct http* h = NULL;
+    char short_date[SHORT_TIME_LENGTH];
+    char long_date[LONG_TIME_LENGTH];
+    char* file_sha256 = NULL;
+    char* s3_host = NULL;
+    char* canonical_request = NULL;
+    char* string_to_sign = NULL;
+    char* auth_value = NULL;
+    char* canonical_request_sha256 = NULL;
+    
+    // Get current time in ISO8601 format
+    memset(&short_date[0], 0, sizeof(short_date));
+    memset(&long_date[0], 0, sizeof(long_date));
+    
+    if (pgmoneta_get_timestamp_ISO8601_format(short_date, long_date)) {
+        printf("Failed to get timestamp\n");
+        fclose(test_file);
+        return 1;
+    }
+    
+    printf("Short date: %s\n", short_date);
+    printf("Long date: %s\n", long_date);
+    
+    // Calculate file SHA256
+    pgmoneta_create_sha256_file(temp_filename, &file_sha256);
+    printf("File SHA256: %s\n", file_sha256);
+    
+    // Construct S3 host
+    s3_host = malloc(strlen(s3_bucket) + strlen(s3_aws_region) + 20);
+    sprintf(s3_host, "%s.s3.%s.amazonaws.com", s3_bucket, s3_aws_region);
+    printf("S3 host: %s\n", s3_host);
+    
+    // Set up HTTP connection
+    if (pgmoneta_http_connect(s3_host, 443, true, &h)) {
+        printf("Failed to connect to S3\n");
+        fclose(test_file);
+        free(s3_host);
+        free(file_sha256);
+        return 1;
+    }
+    
+    // 1. Construct canonical request
+    canonical_request = pgmoneta_append(canonical_request, "PUT\n/");
+    canonical_request = pgmoneta_append(canonical_request, object_key);
+    canonical_request = pgmoneta_append(canonical_request, "\n\nhost:");
+    canonical_request = pgmoneta_append(canonical_request, s3_host);
+    canonical_request = pgmoneta_append(canonical_request, "\nx-amz-content-sha256:");
+    canonical_request = pgmoneta_append(canonical_request, file_sha256);
+    canonical_request = pgmoneta_append(canonical_request, "\nx-amz-date:");
+    canonical_request = pgmoneta_append(canonical_request, long_date);
+    canonical_request = pgmoneta_append(canonical_request, "\nx-amz-storage-class:REDUCED_REDUNDANCY\n\nhost;x-amz-content-sha256;x-amz-date;x-amz-storage-class\n");
+    canonical_request = pgmoneta_append(canonical_request, file_sha256);
+    
+    // Hash the canonical request
+    pgmoneta_generate_string_sha256_hash(canonical_request, &canonical_request_sha256);
+    printf("Canonical request hash: %s\n", canonical_request_sha256);
+    
+    // 2. Construct string to sign
+    string_to_sign = pgmoneta_append(string_to_sign, "AWS4-HMAC-SHA256\n");
+    string_to_sign = pgmoneta_append(string_to_sign, long_date);
+    string_to_sign = pgmoneta_append(string_to_sign, "\n");
+    string_to_sign = pgmoneta_append(string_to_sign, short_date);
+    string_to_sign = pgmoneta_append(string_to_sign, "/");
+    string_to_sign = pgmoneta_append(string_to_sign, s3_aws_region);
+    string_to_sign = pgmoneta_append(string_to_sign, "/s3/aws4_request\n");
+    string_to_sign = pgmoneta_append(string_to_sign, canonical_request_sha256);
+    
+    // 3. Calculate the signing key
+    char* key = NULL;
+    unsigned char* date_key_hmac = NULL;
+    unsigned char* date_region_key_hmac = NULL;
+    unsigned char* date_region_service_key_hmac = NULL;
+    unsigned char* signing_key_hmac = NULL;
+    unsigned char* signature_hmac = NULL;
+    unsigned char* signature_hex = NULL;
+    int hmac_length = 0;
+    
+    key = pgmoneta_append(key, "AWS4");
+    key = pgmoneta_append(key, s3_secret_access_key);
+    
+    // Generate signing key through multiple HMAC-SHA256 operations
+    if (pgmoneta_generate_string_hmac_sha256_hash(key, strlen(key), short_date, SHORT_TIME_LENGTH - 1, 
+                                             &date_key_hmac, &hmac_length)) {
+        printf("Failed to generate date key\n");
+        goto error;
+    }
+    
+    if (pgmoneta_generate_string_hmac_sha256_hash((char*)date_key_hmac, hmac_length, s3_aws_region, 
+                                             strlen(s3_aws_region), &date_region_key_hmac, &hmac_length)) {
+        printf("Failed to generate date-region key\n");
+        goto error;
+    }
+    
+    if (pgmoneta_generate_string_hmac_sha256_hash((char*)date_region_key_hmac, hmac_length, "s3", 
+                                             strlen("s3"), &date_region_service_key_hmac, &hmac_length)) {
+        printf("Failed to generate date-region-service key\n");
+        goto error;
+    }
+    
+    if (pgmoneta_generate_string_hmac_sha256_hash((char*)date_region_service_key_hmac, hmac_length, 
+                                             "aws4_request", strlen("aws4_request"), 
+                                             &signing_key_hmac, &hmac_length)) {
+        printf("Failed to generate signing key\n");
+        goto error;
+    }
+    
+    printf("Generated signing key\n");
+    
+    // 4. Calculate signature
+    if (pgmoneta_generate_string_hmac_sha256_hash((char*)signing_key_hmac, hmac_length, string_to_sign, 
+                                             strlen(string_to_sign), &signature_hmac, &hmac_length)) {
+        printf("Failed to generate signature\n");
+        goto error;
+    }
+    
+    pgmoneta_convert_base32_to_hex(signature_hmac, hmac_length, &signature_hex);
+    printf("Signature: %s\n", signature_hex);
+    
+    // 5. Construct Authorization header
+    auth_value = pgmoneta_append(auth_value, "AWS4-HMAC-SHA256 Credential=");
+    auth_value = pgmoneta_append(auth_value, s3_access_key_id);
+    auth_value = pgmoneta_append(auth_value, "/");
+    auth_value = pgmoneta_append(auth_value, short_date);
+    auth_value = pgmoneta_append(auth_value, "/");
+    auth_value = pgmoneta_append(auth_value, s3_aws_region);
+    auth_value = pgmoneta_append(auth_value, "/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class,Signature=");
+    auth_value = pgmoneta_append(auth_value, (char*)signature_hex);
+    
+    printf("Authorization header generated\n");
+    
+    pgmoneta_http_add_header2(h, "Authorization", auth_value);
+    pgmoneta_http_add_header2(h, "x-amz-content-sha256", file_sha256);
+    pgmoneta_http_add_header2(h, "x-amz-date", long_date);
+    pgmoneta_http_add_header2(h, "x-amz-storage-class", "REDUCED_REDUNDANCY");
+    
+    // Construct path with leading slash for HTTP PUT
+    char s3_path[512];
+    sprintf(s3_path, "/%s", object_key);
+    printf("S3 path for HTTP PUT: %s\n", s3_path);
+    
+    // Perform the PUT request with the file
+    printf("Uploading file to S3...\n");
+    int result = pgmoneta_http_put_file(h, s3_host, s3_path, test_file, file_size);
+    
+    if (result == 0) {
+        printf("File uploaded successfully to S3\n");
+        printf("Object URL: https://%s/%s\n", s3_host, object_key);
+    } else {
+        printf("Failed to upload file to S3\n");
+    }
+    
+    // Cleanup
+    fclose(test_file);
+    pgmoneta_http_disconnect(h);
+    free(h);
+    free(s3_host);
+    free(file_sha256);
+    free(canonical_request);
+    free(canonical_request_sha256);
+    free(string_to_sign);
+    free(key);
+    if (date_key_hmac) free(date_key_hmac);
+    if (date_region_key_hmac) free(date_region_key_hmac);
+    if (date_region_service_key_hmac) free(date_region_service_key_hmac);
+    if (signing_key_hmac) free(signing_key_hmac);
+    if (signature_hmac) free(signature_hmac);
+    if (signature_hex) free(signature_hex);
+    if (auth_value) free(auth_value);
+    
+    remove(temp_filename); // Clean up test file
+    
+    printf("Finished pgmoneta_s3_test\n");
+    return result;
+
+error:
+    if (test_file) fclose(test_file);
+    if (h) {
+        pgmoneta_http_disconnect(h);
+        free(h);
+    }
+    if (s3_host) free(s3_host);
+    if (file_sha256) free(file_sha256);
+    if (canonical_request) free(canonical_request);
+    if (canonical_request_sha256) free(canonical_request_sha256);
+    if (string_to_sign) free(string_to_sign);
+    if (key) free(key);
+    if (date_key_hmac) free(date_key_hmac);
+    if (date_region_key_hmac) free(date_region_key_hmac);
+    if (date_region_service_key_hmac) free(date_region_service_key_hmac);
+    if (signing_key_hmac) free(signing_key_hmac);
+    if (signature_hmac) free(signature_hmac);
+    if (signature_hex) free(signature_hex);
+    if (auth_value) free(auth_value);
+    
+    remove(temp_filename); // Clean up test file
+    
+    printf("Failed pgmoneta_s3_test with error\n");
+    return 1;
 }
