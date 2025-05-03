@@ -684,7 +684,7 @@ main(int argc, char** argv)
    // {
    //    if (!fork())
    //    {
-   //       pgmoneta_memory_init();
+   //       // pgmoneta_memory_init();
    //       // pgmoneta_http_test();
    //       // pgmoneta_https_test();
    //       // pgmoneta_http_post_test();

@@ -28,7 +28,8 @@
 
 /* pgmoneta */
 #include <pgmoneta.h>
-#include <http.h>
+// #include <http.h>
+#include<test.h>
 #include <logging.h>
 #include <security.h>
 #include <utils.h>
@@ -102,12 +103,6 @@ s3_storage_setup(char* name __attribute__((unused)), struct art* nodes)
    label = (char*)pgmoneta_art_search(nodes, NODE_LABEL);
 
    pgmoneta_log_debug("S3 storage engine (setup): %s/%s", config->common.servers[server].name, label);
-
-   curl = curl_easy_init();
-   if (curl == NULL)
-   {
-      goto error;
-   }
 
    return 0;
 
@@ -216,12 +211,13 @@ s3_storage_teardown(char* name __attribute__((unused)), struct art* nodes)
 
    pgmoneta_delete_directory(root);
 
-   curl_easy_cleanup(curl);
-
+   // No need for curl cleanup anymore
+   
    free(root);
 
    return 0;
 }
+
 
 static int
 s3_upload_files(char* local_root, char* s3_root, char* relative_path)
@@ -311,8 +307,8 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
    int hmac_length = 0;
    FILE* file = NULL;
    struct stat file_info;
-   CURLcode res = -1;
-   struct curl_slist* chunk = NULL;
+   int res = -1;
+   struct http* http = NULL;
    struct main_configuration* config;
 
    config = (struct main_configuration*)shmem;
@@ -398,25 +394,21 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
    auth_value = pgmoneta_append(auth_value, "/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class,Signature=");
    auth_value = pgmoneta_append(auth_value, (char*)signature_hex);
 
-   chunk = pgmoneta_http_add_header(chunk, "Authorization", auth_value);
-
-   chunk = pgmoneta_http_add_header(chunk, "Host", s3_host);
-
-   chunk = pgmoneta_http_add_header(chunk, "x-amz-content-sha256", file_sha256);
-
-   chunk = pgmoneta_http_add_header(chunk, "x-amz-date", long_date);
-
-   chunk = pgmoneta_http_add_header(chunk, "x-amz-storage-class", "REDUCED_REDUNDANCY");
-
-   if (pgmoneta_http_set_header_option(curl, chunk))
+   // Connect to S3 with our custom HTTP implementation
+   if (pgmoneta_http_connect(s3_host, 443, true, &http))
    {
       goto error;
    }
 
-   s3_url = pgmoneta_append(s3_url, "https://");
-   s3_url = pgmoneta_append(s3_url, s3_host);
-   s3_url = pgmoneta_append(s3_url, "/");
-   s3_url = pgmoneta_append(s3_url, s3_path);
+   // Add headers
+   pgmoneta_http_add_header2(http, "Authorization", auth_value);
+   pgmoneta_http_add_header2(http, "x-amz-content-sha256", file_sha256);
+   pgmoneta_http_add_header2(http, "x-amz-date", long_date);
+   pgmoneta_http_add_header2(http, "x-amz-storage-class", "REDUCED_REDUNDANCY");
+
+   // Construct path for PUT request
+   char s3_put_path[1024];
+   snprintf(s3_put_path, sizeof(s3_put_path), "/%s", s3_path);
 
    file = fopen(local_path, "rb");
    if (file == NULL)
@@ -429,20 +421,11 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
       goto error;
    }
 
-   pgmoneta_http_set_request_option(curl, HTTP_PUT);
-
-   pgmoneta_http_set_url_option(curl, s3_url);
-
-   curl_easy_setopt(curl, CURLOPT_READDATA, (void*) file);
-
-   curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)file_info.st_size);
-
-   curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-
-   res = curl_easy_perform(curl);
-   if (res != CURLE_OK)
+   // Perform the PUT request with file
+   res = pgmoneta_http_put_file(http, s3_host, s3_put_path, file, file_info.st_size);
+   if (res != 0)
    {
-      fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+      fprintf(stderr, "pgmoneta_http_put_file() failed\n");
       goto error;
    }
 
@@ -463,7 +446,8 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
    free(string_to_sign);
    free(auth_value);
 
-   curl_slist_free_all(chunk);
+   pgmoneta_http_disconnect(http);
+   free(http);
 
    fclose(file);
    return 0;
@@ -550,9 +534,10 @@ error:
       free(auth_value);
    }
 
-   if (chunk != NULL)
+   if (http != NULL)
    {
-      curl_slist_free_all(chunk);
+      pgmoneta_http_disconnect(http);
+      free(http);
    }
 
    if (file != NULL)
