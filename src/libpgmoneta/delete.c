@@ -51,11 +51,13 @@ delete_wal_older_than(char* srv_wal, char* base, int backup_index);
 int
 pgmoneta_delete(int srv, char* label)
 {
+   int ec = -1;
+   char* en = NULL;
    struct workflow* workflow = NULL;
    struct art* nodes = NULL;
    struct backup* backup = NULL;
 
-   workflow = pgmoneta_workflow_create(WORKFLOW_TYPE_DELETE_BACKUP, srv, NULL);
+   workflow = pgmoneta_workflow_create(WORKFLOW_TYPE_DELETE_BACKUP, NULL);
 
    if (pgmoneta_art_create(&nodes))
    {
@@ -67,7 +69,7 @@ pgmoneta_delete(int srv, char* label)
       goto error;
    }
 
-   if (pgmoneta_workflow_execute(workflow, nodes, srv, -1, 0, 0, NULL))
+   if (pgmoneta_workflow_execute(workflow, nodes, &en, &ec))
    {
       goto error;
    }
@@ -80,6 +82,8 @@ pgmoneta_delete(int srv, char* label)
    return 0;
 
 error:
+
+   pgmoneta_log_error("Delete: %s (%d)", en, ec);
 
    free(backup);
    pgmoneta_art_destroy(nodes);
