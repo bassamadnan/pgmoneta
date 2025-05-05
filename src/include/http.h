@@ -51,12 +51,12 @@ extern "C" {
  */
 struct http
 {
-   int endpoint;  /**< The endpoint */
-   int socket;    /**< The socket */
-   char* headers; /**< The HTTP headers */
-   char* body;    /**< The HTTP body */
-   SSL* ssl;
-   char* request_headers;
+   int endpoint;         /**< The endpoint */
+   int socket;           /**< The socket descriptor */
+   char* body;           /**< The HTTP response body */
+   char* headers;        /**< The HTTP response headers */
+   char* request_headers; /**< The HTTP request headers */
+   SSL* ssl;             /**< The SSL connection (NULL for non-secure) */
 };
 
 /**
@@ -110,8 +110,8 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
  * @param length The length of the data
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_post(struct http* http, const char* hostname, const char* path, 
-                      const char* data, size_t length);
+int pgmoneta_http_post(struct http* http, const char* hostname, const char* path,
+                       const char* data, size_t length);
 
 /**
  * Perform HTTP PUT request
@@ -122,8 +122,8 @@ int pgmoneta_http_post(struct http* http, const char* hostname, const char* path
  * @param length The length of the data
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_put(struct http* http, const char* hostname, const char* path, 
-                     const void* data, size_t length);
+int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
+                      const void* data, size_t length);
 
 /**
  * Perform HTTP PUT request with a file
@@ -135,8 +135,7 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
  * @param content_type The content type of the file (can be NULL for default)
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type); 
-
+int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type);
 
 #ifdef __cplusplus
 }

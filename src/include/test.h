@@ -10,7 +10,6 @@ extern "C" {
 #include <stdbool.h>
 #include <stdio.h>
 
-
 /**
  * Test functions
  */

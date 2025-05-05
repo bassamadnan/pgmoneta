@@ -332,7 +332,8 @@ azure_send_upload_request(char* local_root, char* azure_root, char* relative_pat
    config = (struct main_configuration*)shmem;
 
    // Check for storage account name contains spaces, which will cause issues
-   if (strchr(config->azure_storage_account, ' ') != NULL) {
+   if (strchr(config->azure_storage_account, ' ') != NULL)
+   {
       pgmoneta_log_error("Azure storage account name contains spaces: '%s'. This is not allowed.", config->azure_storage_account);
       goto error;
    }
@@ -402,11 +403,12 @@ azure_send_upload_request(char* local_root, char* azure_root, char* relative_pat
    auth_value = pgmoneta_append(auth_value, base64_signature);
 
    azure_host = azure_get_host();
-   
+
    // Create HTTP connection
-   if (pgmoneta_http_connect(azure_host, 443, true, &http)) {
-       pgmoneta_log_error("Failed to connect to Azure host: %s", azure_host);
-       goto error;
+   if (pgmoneta_http_connect(azure_host, 443, true, &http))
+   {
+      pgmoneta_log_error("Failed to connect to Azure host: %s", azure_host);
+      goto error;
    }
 
    // Add headers

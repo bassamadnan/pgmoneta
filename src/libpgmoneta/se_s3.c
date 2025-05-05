@@ -52,7 +52,6 @@ static int s3_send_upload_request(char* local_root, char* s3_root, char* relativ
 static char* s3_get_host(void);
 static char* s3_get_basepath(int server, char* identifier);
 
-
 struct workflow*
 pgmoneta_storage_create_s3(void)
 {
@@ -213,7 +212,6 @@ s3_storage_teardown(char* name __attribute__((unused)), struct art* nodes)
 
    return 0;
 }
-
 
 static int
 s3_upload_files(char* local_root, char* s3_root, char* relative_path)
