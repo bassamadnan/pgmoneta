@@ -32,6 +32,17 @@
 #include <utils.h>
 #include <logging.h>
 
+void pgmoneta_http_add_header(struct http* http, const char* name, const char* value);
+static int build_http_header(int method, const char* path, char** request);
+static int extract_headers_body(char* response, struct http* http);
+int pgmoneta_http_get(struct http* http, const char* hostname, const char* path);
+int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result);
+int pgmoneta_http_post(struct http* http, const char* hostname, const char* path, const char* data, size_t length);
+int pgmoneta_http_put(struct http* http, const char* hostname, const char* path, const void* data, size_t length);
+int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type);
+int pgmoneta_http_direct_read(SSL* ssl, int socket, char** response_text);
+void pgmoneta_http_disconnect(struct http* http);
+
 void pgmoneta_http_add_header(struct http* http, const char* name, const char* value)
 {
    http->request_headers = pgmoneta_append(http->request_headers, name);
@@ -43,34 +54,24 @@ void pgmoneta_http_add_header(struct http* http, const char* name, const char* v
 static int
 build_http_header(int method, const char* path, char** request)
 {
-   printf("Building HTTP header, method=%d, path=%s\n", method, path);
    char* r = NULL;
    *request = NULL;
 
-   printf("Method comparison: %d vs GET=%d, POST=%d, PUT=%d\n", 
-          method, PGMONETA_HTTP_GET, PGMONETA_HTTP_POST, PGMONETA_HTTP_PUT);
-
    if (method == PGMONETA_HTTP_GET) {
-      printf("Before GET append\n");
       r = pgmoneta_append(r, "GET ");
-      printf("After GET append: %s\n", r ? r : "NULL");
    } else if (method == PGMONETA_HTTP_POST) {
       r = pgmoneta_append(r, "POST ");
    } else if (method == PGMONETA_HTTP_PUT) {
       r = pgmoneta_append(r, "PUT ");
    } else {
-      printf("Invalid HTTP method: %d\n", method);
+      pgmoneta_log_error("Invalid HTTP method: %d", method);
       return 1;
    }
 
    r = pgmoneta_append(r, path);
-   printf("Added path: %s\n", r);
-   
    r = pgmoneta_append(r, " HTTP/1.1\r\n");
-   printf("Added HTTP version: %s\n", r);
 
    *request = r;
-   printf("Finished building request headers: %s\n", r);
 
    return 0;
 }
@@ -83,24 +84,21 @@ extract_headers_body(char* response, struct http* http)
    char* response_copy = NULL;
 
    if (response == NULL) {
-      printf("ERROR: Response is NULL\n");
+      pgmoneta_log_error("Response is NULL");
       return 1;
    }
 
    response_copy = strdup(response);
    if (response_copy == NULL) {
-      printf("ERROR: Failed to duplicate response string\n");
+      pgmoneta_log_error("Failed to duplicate response string");
       return 1;
    }
 
-   printf("Tokenizing response\n");
    p = strtok(response_copy, "\n");
    while (p != NULL)
    {
-      printf("Processing line: %s\n", p);
       if (*p == '\r')
       {
-         printf("Found header/body separator\n");
          header = false;
       }
       else
@@ -118,23 +116,18 @@ extract_headers_body(char* response, struct http* http)
                http->body = pgmoneta_append_char(http->body, '\n');
             }
          }
-         else
-         {
-            printf("Skipping chunk size line: %s\n", p);
-         }
       }
 
       p = strtok(NULL, "\n");
    }
 
    free(response_copy);
-   printf("Finished extracting headers and body\n");
    return 0;
 }
 
 int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
 {
-   printf("Starting pgmoneta_http_get\n");
+   pgmoneta_log_debug("Starting pgmoneta_http_get");
    struct message* msg_request = NULL;
    int error = 0;
    int status;
@@ -143,10 +136,9 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    char* response = NULL;
    const char* endpoint = path ? path : "/get";
 
-   printf("Building HTTP header\n");
    if (build_http_header(PGMONETA_HTTP_GET, endpoint, &request))
    {
-      printf("Failed to build HTTP header\n");
+      pgmoneta_log_error("Failed to build HTTP header");
       goto error;
    }
 
@@ -158,66 +150,53 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    full_request = pgmoneta_append(NULL, request);
    full_request = pgmoneta_append(full_request, http->request_headers);
    full_request = pgmoneta_append(full_request, "\r\n");
-
-   printf("HTTP request: %s\n", full_request);
    
-   printf("Allocating msg_request\n");
    msg_request = (struct message*)malloc(sizeof(struct message));
    if (msg_request == NULL)
    {
-      printf("Failed to allocate msg_request\n");
+      pgmoneta_log_error("Failed to allocate msg_request");
       goto error;
    }
 
    memset(msg_request, 0, sizeof(struct message));
 
-   printf("Setting msg_request data\n");
    msg_request->data = full_request;
    msg_request->length = strlen(full_request) + 1;
 
    error = 0;
-   printf("Sending request\n");
 req:
    if (error < 5)
    {
-      printf("Attempt %d to write message on socket: %d\n", error + 1, http->socket);
       status = pgmoneta_write_message(http->ssl, http->socket, msg_request);
-      printf("Write status: %d\n", status);
       if (status != MESSAGE_STATUS_OK)
       {
          error++;
-         printf("Write failed, retrying (%d/5)\n", error);
+         pgmoneta_log_debug("Write failed, retrying (%d/5)", error);
          goto req;
       }
    }
    else
    {
-      printf("Failed to write after 5 attempts\n");
+      pgmoneta_log_error("Failed to write after 5 attempts");
       goto error;
    }
 
-   printf("Request sent successfully, reading response\n");
    status = pgmoneta_http_direct_read(http->ssl, http->socket, &response);
-   printf("Read status: %d\n", status);
    
    if (response == NULL) {
-      printf("ERROR: No response data collected\n");
+      pgmoneta_log_error("No response data collected");
       goto error;
    }
-   
-   printf("Full response: %s\n", response);
 
-   printf("Extracting headers and body\n");
    if (extract_headers_body(response, http))
    {
-      printf("Failed to extract headers and body\n");
+      pgmoneta_log_error("Failed to extract headers and body");
       goto error;
    }
 
-   printf("HTTP Headers:\n%s\n", http->headers ? http->headers : "NULL");
-   printf("HTTP Body:\n%s\n", http->body ? http->body : "NULL");
+   pgmoneta_log_debug("HTTP Headers: %s", http->headers ? http->headers : "NULL");
+   pgmoneta_log_debug("HTTP Body: %s", http->body ? http->body : "NULL");
 
-   printf("Freeing resources\n");
    free(request);
    free(full_request);
    free(response);
@@ -226,11 +205,10 @@ req:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished pgmoneta_http_get successfully\n");
    return 0;
 
 error:
-   printf("Error in pgmoneta_http_get, cleaning up\n");
+   pgmoneta_log_error("Error in pgmoneta_http_get, cleaning up");
    if (request) free(request);
    if (full_request) free(full_request);
    if (response) free(response);
@@ -239,13 +217,12 @@ error:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished error cleanup\n");
    return 1;
 }
 
 int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result)
 {
-    printf("Connecting to %s:%d (secure: %d)\n", hostname, port, secure);
+    pgmoneta_log_debug("Connecting to %s:%d (secure: %d)", hostname, port, secure);
     struct http* h = NULL;
     int socket_fd = -1;
     SSL* ssl = NULL;
@@ -254,7 +231,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
     if(h == NULL)
     {
         pgmoneta_log_error("Failed to allocate HTTP structure");
-        printf("Failed to allocate HTTP structure\n");
         return 1;
     }
     
@@ -263,7 +239,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
     if (pgmoneta_connect(hostname, port, &socket_fd))
     {
        pgmoneta_log_error("Failed to connect to %s:%d", hostname, port);
-       printf("Failed to connect to %s:%d\n", hostname, port);
        free(h);
        return 1;
     }
@@ -277,7 +252,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
         if (pgmoneta_create_ssl_ctx(true, &ctx))
         {
             pgmoneta_log_error("Failed to create SSL context");
-            printf("Failed to create SSL context\n");
             pgmoneta_disconnect(socket_fd);
             free(h);
             return 1;
@@ -286,7 +260,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
         if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) == 0)
         {
             pgmoneta_log_error("Failed to set minimum TLS version");
-            printf("Failed to set minimum TLS version\n");
             SSL_CTX_free(ctx);
             pgmoneta_disconnect(socket_fd);
             free(h);
@@ -297,7 +270,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
         if (ssl == NULL)
         {
             pgmoneta_log_error("Failed to create SSL structure");
-            printf("Failed to create SSL structure\n");
             SSL_CTX_free(ctx);
             pgmoneta_disconnect(socket_fd);
             free(h);
@@ -307,7 +279,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
         if (SSL_set_fd(ssl, socket_fd) == 0)
         {
             pgmoneta_log_error("Failed to set SSL file descriptor");
-            printf("Failed to set SSL file descriptor\n");
             SSL_free(ssl);
             SSL_CTX_free(ctx);
             pgmoneta_disconnect(socket_fd);
@@ -330,7 +301,6 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
                         continue;
                     default:
                         pgmoneta_log_error("SSL connection failed: %s", ERR_error_string(err, NULL));
-                        printf("SSL connection failed: %s\n", ERR_error_string(err, NULL));
                         SSL_free(ssl);
                         SSL_CTX_free(ctx);
                         pgmoneta_disconnect(socket_fd);
@@ -341,10 +311,8 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
         } while (connect_result != 1);
         
         h->ssl = ssl;
-        printf("SSL connection established\n");
     }
     
-    printf("Connected, socket: %d, ssl: %p\n", h->socket, (void*)h->ssl);
     *result = h;
     
     return 0;
@@ -352,7 +320,7 @@ int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct ht
 
 int pgmoneta_http_post(struct http* http, const char* hostname, const char* path, const char* data, size_t length)
 {
-   printf("Starting pgmoneta_http_post\n");
+   pgmoneta_log_debug("Starting pgmoneta_http_post");
    struct message* msg_request = NULL;
    int error = 0;
    int status;
@@ -361,10 +329,9 @@ int pgmoneta_http_post(struct http* http, const char* hostname, const char* path
    char* response = NULL;
    char content_length[32];
 
-   printf("Building HTTP header\n");
    if (build_http_header(PGMONETA_HTTP_POST, path, &request))
    {
-      printf("Failed to build HTTP header\n");
+      pgmoneta_log_error("Failed to build HTTP header");
       goto error;
    }
 
@@ -384,66 +351,50 @@ int pgmoneta_http_post(struct http* http, const char* hostname, const char* path
    {
       full_request = pgmoneta_append(full_request, data);
    }
-
-   printf("HTTP request: %s\n", full_request);
    
-   printf("Allocating msg_request\n");
    msg_request = (struct message*)malloc(sizeof(struct message));
    if (msg_request == NULL)
    {
-      printf("Failed to allocate msg_request\n");
+      pgmoneta_log_error("Failed to allocate msg_request");
       goto error;
    }
 
    memset(msg_request, 0, sizeof(struct message));
 
-   printf("Setting msg_request data\n");
    msg_request->data = full_request;
    msg_request->length = strlen(full_request) + 1;
 
    error = 0;
-   printf("Sending request\n");
 req:
    if (error < 5)
    {
-      printf("Attempt %d to write message on socket: %d\n", error + 1, http->socket);
       status = pgmoneta_write_message(http->ssl, http->socket, msg_request);
-      printf("Write status: %d\n", status);
       if (status != MESSAGE_STATUS_OK)
       {
          error++;
-         printf("Write failed, retrying (%d/5)\n", error);
+         pgmoneta_log_debug("Write failed, retrying (%d/5)", error);
          goto req;
       }
    }
    else
    {
-      printf("Failed to write after 5 attempts\n");
+      pgmoneta_log_error("Failed to write after 5 attempts");
       goto error;
    }
 
-   printf("Request sent successfully, reading response\n");
    status = pgmoneta_http_direct_read(http->ssl, http->socket, &response);
-   printf("Read status: %d\n", status);
    
    if (response == NULL) {
-      printf("ERROR: No response data collected\n");
+      pgmoneta_log_error("No response data collected");
       goto error;
    }
-   
-   printf("Full response: %s\n", response);
 
-   printf("Extracting headers and body\n");
    if (extract_headers_body(response, http))
    {
-      printf("Failed to extract headers and body\n");
+      pgmoneta_log_error("Failed to extract headers and body");
       goto error;
    }
 
-   printf("HTTP Headers:\n%s\n", http->headers ? http->headers : "NULL");
-   printf("HTTP Body:\n%s\n", http->body ? http->body : "NULL");
-
-   printf("Freeing resources\n");
    free(request);
    free(full_request);
    free(response);
@@ -452,11 +403,10 @@ req:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished pgmoneta_http_post successfully\n");
    return 0;
 
 error:
-   printf("Error in pgmoneta_http_post, cleaning up\n");
+   pgmoneta_log_error("Error in pgmoneta_http_post, cleaning up");
    if (request) free(request);
    if (full_request) free(full_request);
    if (response) free(response);
@@ -465,13 +415,12 @@ error:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished error cleanup\n");
    return 1;
 }
 
 int pgmoneta_http_put(struct http* http, const char* hostname, const char* path, const void* data, size_t length)
 {
-   printf("Starting pgmoneta_http_put\n");
+   pgmoneta_log_debug("Starting pgmoneta_http_put");
    struct message* msg_request = NULL;
    int error = 0;
    int status;
@@ -480,10 +429,9 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
    char* response = NULL;
    char content_length[32];
 
-   printf("Building HTTP header\n");
    if (build_http_header(PGMONETA_HTTP_PUT, path, &request))
    {
-      printf("Failed to build HTTP header\n");
+      pgmoneta_log_error("Failed to build HTTP header");
       goto error;
    }
 
@@ -505,7 +453,7 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
    char* complete_request = malloc(total_len + 1);
    if (complete_request == NULL)
    {
-      printf("Failed to allocate complete request\n");
+      pgmoneta_log_error("Failed to allocate complete request");
       goto error;
    }
    
@@ -517,68 +465,51 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
    }
    
    complete_request[total_len] = '\0';
-
-   printf("HTTP request headers: %s\n", full_request);
-   printf("Data length: %zu\n", length);
    
-   printf("Allocating msg_request\n");
    msg_request = (struct message*)malloc(sizeof(struct message));
    if (msg_request == NULL)
    {
-      printf("Failed to allocate msg_request\n");
+      pgmoneta_log_error("Failed to allocate msg_request");
       free(complete_request);
       goto error;
    }
 
    memset(msg_request, 0, sizeof(struct message));
 
-   printf("Setting msg_request data\n");
    msg_request->data = complete_request;
    msg_request->length = total_len + 1;
 
    error = 0;
-   printf("Sending request\n");
 req:
    if (error < 5)
    {
-      printf("Attempt %d to write message on socket: %d\n", error + 1, http->socket);
       status = pgmoneta_write_message(http->ssl, http->socket, msg_request);
-      printf("Write status: %d\n", status);
       if (status != MESSAGE_STATUS_OK)
       {
          error++;
-         printf("Write failed, retrying (%d/5)\n", error);
+         pgmoneta_log_debug("Write failed, retrying (%d/5)", error);
          goto req;
       }
    }
    else
    {
-      printf("Failed to write after 5 attempts\n");
+      pgmoneta_log_error("Failed to write after 5 attempts");
       goto error;
    }
 
-   printf("Request sent successfully, reading response\n");
    status = pgmoneta_http_direct_read(http->ssl, http->socket, &response);
-   printf("Read status: %d\n", status);
    
    if (response == NULL) {
-      printf("ERROR: No response data collected\n");
+      pgmoneta_log_error("No response data collected");
       goto error;
    }
-   
-   printf("Full response: %s\n", response);
 
-   printf("Extracting headers and body\n");
    if (extract_headers_body(response, http))
    {
-      printf("Failed to extract headers and body\n");
+      pgmoneta_log_error("Failed to extract headers and body");
       goto error;
    }
 
-   printf("HTTP Headers:\n%s\n", http->headers ? http->headers : "NULL");
-   printf("HTTP Body:\n%s\n", http->body ? http->body : "NULL");
-
-   printf("Freeing resources\n");
    free(request);
    free(full_request);
    free(response);
@@ -588,11 +519,10 @@ req:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished pgmoneta_http_put successfully\n");
    return 0;
 
 error:
-   printf("Error in pgmoneta_http_put, cleaning up\n");
+   pgmoneta_log_error("Error in pgmoneta_http_put, cleaning up");
    if (request) free(request);
    if (full_request) free(full_request);
    if (response) free(response);
@@ -605,13 +535,12 @@ error:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished error cleanup\n");
    return 1;
 }
 
 int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type)
 {
-   printf("Starting pgmoneta_http_put_file\n");
+   pgmoneta_log_debug("Starting pgmoneta_http_put_file");
    struct message* msg_request = NULL;
    int error = 0;
    int status;
@@ -623,14 +552,13 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
 
    if (file == NULL)
    {
-      printf("File is NULL\n");
+      pgmoneta_log_error("File is NULL");
       goto error;
    }
 
-   printf("Building HTTP header\n");
    if (build_http_header(PGMONETA_HTTP_PUT, path, &request))
    {
-      printf("Failed to build HTTP header\n");
+      pgmoneta_log_error("Failed to build HTTP header");
       goto error;
    }
 
@@ -649,31 +577,30 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    header_part = pgmoneta_append(header_part, http->request_headers);
    header_part = pgmoneta_append(header_part, "\r\n");
 
-   printf("HTTP request headers: %s\n", header_part);
-   printf("File size: %zu\n", file_size);
+   pgmoneta_log_debug("File size: %zu", file_size);
    
    rewind(file);
    
    file_buffer = malloc(file_size);
    if (file_buffer == NULL)
    {
-      printf("Failed to allocate memory for file content: %zu bytes\n", file_size);
+      pgmoneta_log_error("Failed to allocate memory for file content: %zu bytes", file_size);
       goto error;
    }
    
    size_t bytes_read = fread(file_buffer, 1, file_size, file);
    if (bytes_read != file_size)
    {
-      printf("Failed to read entire file. Expected %zu bytes, got %zu\n", file_size, bytes_read);
+      pgmoneta_log_error("Failed to read entire file. Expected %zu bytes, got %zu", file_size, bytes_read);
       goto error;
    }
    
-   printf("Read %zu bytes from file\n", bytes_read);
+   pgmoneta_log_debug("Read %zu bytes from file", bytes_read);
    
    msg_request = (struct message*)malloc(sizeof(struct message));
    if (msg_request == NULL)
    {
-      printf("Failed to allocate msg_request\n");
+      pgmoneta_log_error("Failed to allocate msg_request");
       goto error;
    }
    
@@ -685,7 +612,7 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    char* full_request = malloc(total_len + 1);
    if (full_request == NULL)
    {
-      printf("Failed to allocate memory for full request: %zu bytes\n", total_len + 1);
+      pgmoneta_log_error("Failed to allocate memory for full request: %zu bytes", total_len + 1);
       goto error;
    }
    
@@ -695,63 +622,51 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    
    full_request[total_len] = '\0';
    
-   printf("Setting msg_request data, total size: %zu\n", total_len);
+   pgmoneta_log_debug("Setting msg_request data, total size: %zu", total_len);
    msg_request->data = full_request;
    msg_request->length = total_len;
 
    error = 0;
-   printf("Sending request\n");
 req:
    if (error < 5)
    {
-      printf("Attempt %d to write message on socket: %d\n", error + 1, http->socket);
       status = pgmoneta_write_message(http->ssl, http->socket, msg_request);
-      printf("Write status: %d\n", status);
       if (status != MESSAGE_STATUS_OK)
       {
          error++;
-         printf("Write failed, retrying (%d/5)\n", error);
+         pgmoneta_log_debug("Write failed, retrying (%d/5)", error);
          goto req;
       }
    }
    else
    {
-      printf("Failed to write after 5 attempts\n");
+      pgmoneta_log_error("Failed to write after 5 attempts");
       goto error;
    }
 
-   printf("Request sent successfully, reading response\n");
    status = pgmoneta_http_direct_read(http->ssl, http->socket, &response);
-   printf("Read status: %d\n", status);
    
    if (response == NULL) {
-      printf("ERROR: No response data collected\n");
+      pgmoneta_log_error("No response data collected");
       goto error;
    }
-   
-   printf("Full response: %s\n", response);
 
-   printf("Extracting headers and body\n");
    if (extract_headers_body(response, http))
    {
-      printf("Failed to extract headers and body\n");
+      pgmoneta_log_error("Failed to extract headers and body");
       goto error;
    }
 
    int status_code = 0;
    if (http->headers && sscanf(http->headers, "HTTP/1.1 %d", &status_code) == 1) {
-      printf("HTTP status code: %d\n", status_code);
+      pgmoneta_log_debug("HTTP status code: %d", status_code);
       if (status_code >= 200 && status_code < 300) {
-         printf("HTTP request successful\n");
+         pgmoneta_log_debug("HTTP request successful");
       } else {
-         printf("HTTP request failed with status code: %d\n", status_code);
+         pgmoneta_log_error("HTTP request failed with status code: %d", status_code);
       }
    }
 
-   printf("HTTP Headers:\n%s\n", http->headers ? http->headers : "NULL");
-   printf("HTTP Body:\n%s\n", http->body ? http->body : "NULL");
-
-   printf("Freeing resources\n");
    free(request);
    free(header_part);
    free(response);
@@ -762,11 +677,10 @@ req:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished pgmoneta_http_put_file with status code: %d\n", status_code);
    return (status_code >= 200 && status_code < 300) ? 0 : 1;
 
 error:
-   printf("Error in pgmoneta_http_put_file, cleaning up\n");
+   pgmoneta_log_error("Error in pgmoneta_http_put_file, cleaning up");
    if (request) free(request);
    if (header_part) free(header_part);
    if (response) free(response);
@@ -779,7 +693,6 @@ error:
    free(http->request_headers);
    http->request_headers = NULL;
 
-   printf("Finished error cleanup\n");
    return 1;
 }
 
@@ -824,8 +737,6 @@ void pgmoneta_http_disconnect(struct http* http)
 {
     if (http != NULL)
     {
-        printf("Disconnecting HTTP connection\n");
-        
         if (http->ssl != NULL)
         {
             pgmoneta_close_ssl(http->ssl);

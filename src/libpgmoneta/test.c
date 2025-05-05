@@ -28,31 +28,6 @@
 #include <poll.h>
 #include <openssl/ssl.h>
 
-int pgmoneta_http_direct_read(SSL* ssl, int socket, char** response_text);
-
-// int pgmoneta_http_curl_test(void)
-// {
-//   printf("Starting CURL test\n");
-//   CURL *curl;
-//   CURLcode res;
-//   curl_global_init(CURL_GLOBAL_ALL);
-//   curl = curl_easy_init();
-//   if(curl) {
-//     printf("Got CURL handle\n");
-//     curl_easy_setopt(curl, CURLOPT_URL, "https://httpbin.org/post");
-//     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "name=daniel&project=curl");
-//     printf("Performing CURL request\n");
-//     res = curl_easy_perform(curl);
-//     if(res != CURLE_OK)
-//       fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-//     else
-//       printf("CURL request successful\n");
-//     curl_easy_cleanup(curl);
-//   }
-//   curl_global_cleanup();
-//   printf("ENDING CURL TEST\n\n");
-//   return 0;
-// }
 
 int pgmoneta_http_test(void)
 {
