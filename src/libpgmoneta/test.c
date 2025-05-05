@@ -724,7 +724,7 @@ error:
    return 1;
 }
 
-int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size)
+int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type)
 {
    printf("Starting pgmoneta_http_put_file\n");
    struct message* msg_request = NULL;
@@ -755,7 +755,10 @@ int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* 
    
    sprintf(content_length, "%zu", file_size);
    pgmoneta_http_add_header2(http, "Content-Length", content_length);
-   pgmoneta_http_add_header2(http, "Content-Type", "application/octet-stream");
+
+   // default to application/octet-stream if not specified
+   const char* type = content_type ? content_type : "application/octet-stream";
+   pgmoneta_http_add_header2(http, "Content-Type", type);
    
    header_part = pgmoneta_append(NULL, request);
    header_part = pgmoneta_append(header_part, http->request_headers);
@@ -1025,7 +1028,7 @@ int pgmoneta_http_put_file_test(void)
    }
 
    printf("Calling pgmoneta_http_put_file\n");
-   status = pgmoneta_http_put_file(h, hostname, "/put", temp_file, data_len);
+   status = pgmoneta_http_put_file(h, hostname, "/put", temp_file, data_len, "text/plain");
    printf("pgmoneta_http_put_file returned: %d\n", status);
 
    pgmoneta_http_disconnect(h);
@@ -1040,11 +1043,14 @@ int pgmoneta_s3_upload_test(void)
 {
    printf("Starting pgmoneta_s3_test\n");
    
-   const char* s3_aws_region = "DO NOT TRY";
-   const char* s3_access_key_id = "DO NOT TRY";
-   const char* s3_secret_access_key = "DO NOT TRY";
-   const char* s3_bucket = "DO NOT TRY";
-   const char* s3_base_dir = "DO NOT TRY";
+   struct main_configuration* config;
+   config = (struct main_configuration*)shmem;
+   
+   const char* s3_aws_region = config->s3_aws_region;
+   const char* s3_access_key_id = config->s3_access_key_id;
+   const char* s3_secret_access_key = config->s3_secret_access_key;
+   const char* s3_bucket = config->s3_bucket;
+   const char* s3_base_dir = config->s3_base_dir;
    
    char* temp_filename = "/tmp/pgmoneta_s3_test_file.txt";
    const char* test_content = "This is a test file for pgMoneta S3 upload functionality.\n"
@@ -1213,7 +1219,7 @@ int pgmoneta_s3_upload_test(void)
    printf("S3 path for HTTP PUT: %s\n", s3_path);
    
    printf("Uploading file to S3...\n");
-   int result = pgmoneta_http_put_file(h, s3_host, s3_path, test_file, file_size);
+   int result = pgmoneta_http_put_file(h, s3_host, s3_path, test_file, file_size, "application/octet-stream");
    
    if (result == 0) {
        printf("File uploaded successfully to S3\n");
@@ -1267,5 +1273,208 @@ error:
    remove(temp_filename);
    
    printf("Failed pgmoneta_s3_test with error\n");
+   return 1;
+}
+
+int pgmoneta_azure_upload_test(void)
+{
+   printf("Starting pgmoneta_azure_test\n");
+   
+   struct main_configuration* config;
+   config = (struct main_configuration*)shmem;
+   
+   // Get configuration values from config
+   const char* azure_storage_account = config->azure_storage_account;
+   const char* azure_container = config->azure_container;
+   const char* azure_shared_key = config->azure_shared_key;
+   const char* azure_base_dir = config->azure_base_dir;
+   
+   // Create test file
+   char* temp_filename = "/tmp/pgmoneta_azure_test_file.txt";
+   const char* test_content = "This is a test file for pgMoneta Azure upload functionality.\n"
+                              "This file was created for testing the custom HTTP implementation.\n"
+                              "The timestamp is: ";
+   
+   FILE* test_file = fopen(temp_filename, "w");
+   if (test_file == NULL) {
+       printf("Failed to create test file\n");
+       return 1;
+   }
+   
+   fputs(test_content, test_file);
+   
+   time_t now = time(NULL);
+   char time_str[64];
+   strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", localtime(&now));
+   fputs(time_str, test_file);
+   
+   fclose(test_file);
+   
+   struct stat file_stat;
+   if (stat(temp_filename, &file_stat) != 0) {
+       printf("Failed to get file stats\n");
+       return 1;
+   }
+   size_t file_size = file_stat.st_size;
+   printf("Test file created with size: %zu bytes\n", file_size);
+   
+   test_file = fopen(temp_filename, "rb");
+   if (test_file == NULL) {
+       printf("Failed to open test file for reading\n");
+       return 1;
+   }
+   
+   // Create a unique blob path for the test
+   char blob_path[256];
+   sprintf(blob_path, "%s/test_%ld.txt", azure_base_dir, (long)now);
+   printf("Azure blob path: %s\n", blob_path);
+
+   // Get UTC timestamp in the format Azure expects
+   char utc_date[64];
+   memset(&utc_date[0], 0, sizeof(utc_date));
+   
+   // Use the same function as in the working implementation
+   if (pgmoneta_get_timestamp_UTC_format(utc_date)) {
+       printf("Failed to get UTC timestamp\n");
+       goto error;
+   }
+   printf("UTC date: %s\n", utc_date);
+   
+   // Construct string to sign exactly like in the working implementation
+   char* string_to_sign = NULL;
+   
+   // Different handling for zero-size files
+   if (file_size == 0) {
+      string_to_sign = pgmoneta_append(string_to_sign, "PUT\n\n\n\n\napplication/octet-stream\n\n\n\n\n\n\nx-ms-blob-type:BlockBlob\nx-ms-date:");
+   } else {
+      string_to_sign = pgmoneta_append(string_to_sign, "PUT\n\n\n");
+      char size_str[32];
+      snprintf(size_str, sizeof(size_str), "%zu", file_size);
+      string_to_sign = pgmoneta_append(string_to_sign, size_str);
+      string_to_sign = pgmoneta_append(string_to_sign, "\n\napplication/octet-stream\n\n\n\n\n\n\nx-ms-blob-type:BlockBlob\nx-ms-date:");
+   }
+   
+   string_to_sign = pgmoneta_append(string_to_sign, utc_date);
+   string_to_sign = pgmoneta_append(string_to_sign, "\nx-ms-version:2021-08-06\n/");
+   string_to_sign = pgmoneta_append(string_to_sign, azure_storage_account);
+   string_to_sign = pgmoneta_append(string_to_sign, "/");
+   string_to_sign = pgmoneta_append(string_to_sign, azure_container);
+   string_to_sign = pgmoneta_append(string_to_sign, "/");
+   string_to_sign = pgmoneta_append(string_to_sign, blob_path);
+   
+   printf("String to sign:\n%s\n", string_to_sign);
+   
+   // Decode the shared key (base64)
+   char* signing_key = NULL;
+   size_t signing_key_length = 0;
+   pgmoneta_base64_decode(azure_shared_key, strlen(azure_shared_key), (void**)&signing_key, &signing_key_length);
+   printf("Decoded shared key length: %zu bytes\n", signing_key_length);
+   
+   // Create HMAC signature
+   unsigned char* signature_hmac = NULL;
+   int hmac_length = 0;
+   if (pgmoneta_generate_string_hmac_sha256_hash(signing_key, signing_key_length, 
+                                                string_to_sign, strlen(string_to_sign), 
+                                                &signature_hmac, &hmac_length)) {
+       printf("Failed to generate HMAC signature\n");
+       goto error;
+   }
+   printf("Generated HMAC signature (%d bytes)\n", hmac_length);
+   
+   // Encode the signature (base64)
+   char* base64_signature = NULL;
+   size_t base64_signature_length = 0;
+   pgmoneta_base64_encode((char*)signature_hmac, hmac_length, &base64_signature, &base64_signature_length);
+   printf("Base64 signature: %s\n", base64_signature);
+   
+   // Create authorization header
+   char* auth_value = NULL;
+   auth_value = pgmoneta_append(auth_value, "SharedKey ");
+   auth_value = pgmoneta_append(auth_value, azure_storage_account);
+   auth_value = pgmoneta_append(auth_value, ":");
+   auth_value = pgmoneta_append(auth_value, base64_signature);
+   printf("Authorization header created\n");
+   
+   // Get the host - use same function as the working implementation
+   char* azure_host = NULL;
+   azure_host = pgmoneta_append(azure_host, azure_storage_account);
+   azure_host = pgmoneta_append(azure_host, ".blob.core.windows.net");
+   printf("Azure host: %s\n", azure_host);
+   
+   // Create URL
+   char* azure_url = NULL;
+   azure_url = pgmoneta_append(azure_url, "https://");
+   azure_url = pgmoneta_append(azure_url, azure_host);
+   azure_url = pgmoneta_append(azure_url, "/");
+   azure_url = pgmoneta_append(azure_url, azure_container);
+   azure_url = pgmoneta_append(azure_url, "/");
+   azure_url = pgmoneta_append(azure_url, blob_path);
+   printf("Azure URL: %s\n", azure_url);
+   
+   // Create HTTP connection
+   struct http* http = NULL;
+   if (pgmoneta_http_connect(azure_host, 443, true, &http)) {
+       printf("Failed to connect to Azure: %s\n", azure_host);
+       goto error;
+   }
+   printf("Connected to Azure\n");
+   
+   // Add headers in the same order as the working implementation
+   pgmoneta_http_add_header2(http, "Authorization", auth_value);
+   pgmoneta_http_add_header2(http, "x-ms-blob-type", "BlockBlob");
+   pgmoneta_http_add_header2(http, "x-ms-date", utc_date);
+   pgmoneta_http_add_header2(http, "x-ms-version", "2021-08-06");
+   printf("Added headers\n");
+   
+   // Create PUT path
+   char azure_put_path[512];
+   sprintf(azure_put_path, "/%s/%s", azure_container, blob_path);
+   printf("Azure PUT path: %s\n", azure_put_path);
+   
+   // Send PUT request with file
+   printf("Uploading file to Azure...\n");
+   int result = pgmoneta_http_put_file(http, azure_host, azure_put_path, test_file, file_size, "application/octet-stream");
+   
+   if (result == 0) {
+       printf("File uploaded successfully to Azure\n");
+       printf("Blob URL: %s\n", azure_url);
+   } else {
+       printf("Failed to upload file to Azure\n");
+   }
+   
+   // Clean up
+   fclose(test_file);
+   pgmoneta_http_disconnect(http);
+   free(http);
+   free(azure_host);
+   free(azure_url);
+   free(string_to_sign);
+   free(signing_key);
+   free(signature_hmac);
+   free(base64_signature);
+   free(auth_value);
+   
+   remove(temp_filename);
+   
+   printf("Finished pgmoneta_azure_test\n");
+   return result;
+
+error:
+   if (test_file) fclose(test_file);
+   if (http) {
+       pgmoneta_http_disconnect(http);
+       free(http);
+   }
+   if (azure_host) free(azure_host);
+   if (azure_url) free(azure_url);
+   if (string_to_sign) free(string_to_sign);
+   if (signing_key) free(signing_key);
+   if (signature_hmac) free(signature_hmac);
+   if (base64_signature) free(base64_signature);
+   if (auth_value) free(auth_value);
+   
+   remove(temp_filename);
+   
+   printf("Failed pgmoneta_azure_test with error\n");
    return 1;
 }

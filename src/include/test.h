@@ -27,7 +27,8 @@ int pgmoneta_http_post_test(void);
 int pgmoneta_http_put_test(void);
 int pgmoneta_http_put_file_test(void);
 int pgmoneta_s3_upload_test(void);
-int pgmoneta_custom_read_message(SSL* ssl, int socket, char** response_text);
+int pgmoneta_azure_upload_test(void);
+// int pgmoneta_custom_read_message(SSL* ssl, int socket, char** response_text);
 /**
  * Connect to an HTTP/HTTPS server
  * @param hostname The host to connect to
@@ -94,8 +95,7 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
  * @param file_size The size of the file
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, 
-                          FILE* file, size_t file_size);
+int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type); 
 
 #ifdef __cplusplus
 }

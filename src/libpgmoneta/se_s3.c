@@ -211,8 +211,6 @@ s3_storage_teardown(char* name __attribute__((unused)), struct art* nodes)
 
    pgmoneta_delete_directory(root);
 
-   // No need for curl cleanup anymore
-   
    free(root);
 
    return 0;
@@ -422,7 +420,7 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
    }
 
    // Perform the PUT request with file
-   res = pgmoneta_http_put_file(http, s3_host, s3_put_path, file, file_info.st_size);
+   res = pgmoneta_http_put_file(http, s3_host, s3_put_path, file, file_info.st_size, "application/octet-stream");
    if (res != 0)
    {
       fprintf(stderr, "pgmoneta_http_put_file() failed\n");

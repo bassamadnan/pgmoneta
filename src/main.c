@@ -684,22 +684,20 @@ main(int argc, char** argv)
    // {
    //    if (!fork())
    //    {
-   //       // pgmoneta_memory_init();
+   //       pgmoneta_memory_init();
    //       // pgmoneta_http_test();
    //       // pgmoneta_https_test();
    //       // pgmoneta_http_post_test();
    //       // pgmoneta_http_put_test();
    //       // pgmoneta_http_put_file_test();
    //       // pgmoneta_s3_upload_test();
-   //       // pgmoneta_memory_destroy();
+   //       // pgmoneta_azure_upload_test();
    //       exit(0);
    //    }
    // }
 
    if (!offline)
    {
-      // pgmoneta_http_curl_test();
-      // pgmoneta_http_test();
       pgmoneta_log_info("Started on %s", config->host);
    }
    else
