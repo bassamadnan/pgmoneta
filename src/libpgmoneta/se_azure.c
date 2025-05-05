@@ -28,8 +28,7 @@
 
 /* pgmoneta */
 #include <pgmoneta.h>
-// #include <http.h>
-#include <test.h>
+#include <http.h>
 #include <logging.h>
 #include <security.h>
 #include <utils.h>
@@ -311,7 +310,6 @@ error:
 static int
 azure_send_upload_request(char* local_root, char* azure_root, char* relative_path)
 {
-   printf("inside upload request\n");
    char utc_date[UTC_TIME_LENGTH];
    char* string_to_sign = NULL;
    char* signing_key = NULL;
@@ -412,10 +410,10 @@ azure_send_upload_request(char* local_root, char* azure_root, char* relative_pat
    }
 
    // Add headers
-   pgmoneta_http_add_header2(http, "Authorization", auth_value);
-   pgmoneta_http_add_header2(http, "x-ms-blob-type", "BlockBlob");
-   pgmoneta_http_add_header2(http, "x-ms-date", utc_date);
-   pgmoneta_http_add_header2(http, "x-ms-version", "2021-08-06");
+   pgmoneta_http_add_header(http, "Authorization", auth_value);
+   pgmoneta_http_add_header(http, "x-ms-blob-type", "BlockBlob");
+   pgmoneta_http_add_header(http, "x-ms-date", utc_date);
+   pgmoneta_http_add_header(http, "x-ms-version", "2021-08-06");
 
    // Construct PUT path
    char azure_put_path[512];
@@ -429,8 +427,6 @@ azure_send_upload_request(char* local_root, char* azure_root, char* relative_pat
       goto error;
    }
 
-   printf("successful upload request\n");
-   
    free(local_path);
    free(azure_path);
    free(azure_host);

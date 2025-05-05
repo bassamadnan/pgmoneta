@@ -28,8 +28,7 @@
 
 /* pgmoneta */
 #include <pgmoneta.h>
-// #include <http.h>
-#include<test.h>
+#include <http.h>
 #include <logging.h>
 #include <security.h>
 #include <utils.h>
@@ -53,7 +52,6 @@ static int s3_send_upload_request(char* local_root, char* s3_root, char* relativ
 static char* s3_get_host(void);
 static char* s3_get_basepath(int server, char* identifier);
 
-static CURL* curl = NULL;
 
 struct workflow*
 pgmoneta_storage_create_s3(void)
@@ -399,10 +397,10 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
    }
 
    // Add headers
-   pgmoneta_http_add_header2(http, "Authorization", auth_value);
-   pgmoneta_http_add_header2(http, "x-amz-content-sha256", file_sha256);
-   pgmoneta_http_add_header2(http, "x-amz-date", long_date);
-   pgmoneta_http_add_header2(http, "x-amz-storage-class", "REDUCED_REDUNDANCY");
+   pgmoneta_http_add_header(http, "Authorization", auth_value);
+   pgmoneta_http_add_header(http, "x-amz-content-sha256", file_sha256);
+   pgmoneta_http_add_header(http, "x-amz-date", long_date);
+   pgmoneta_http_add_header(http, "x-amz-storage-class", "REDUCED_REDUNDANCY");
 
    // Construct path for PUT request
    char s3_put_path[1024];
