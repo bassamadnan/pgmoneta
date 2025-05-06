@@ -61,7 +61,6 @@ We recommend using Fedora to test and run [**pgmoneta**][pgmoneta], but other Li
 * [systemd](https://www.freedesktop.org/wiki/Software/systemd/)
 * [rst2man](https://docutils.sourceforge.io/)
 * [libssh](https://www.libssh.org/)
-* [libcurl](https://curl.se/libcurl/)
 * [libarchive](http://www.libarchive.org/)
 
 ```sh
@@ -70,7 +69,6 @@ dnf install git gcc clang clang-analyzer cmake make libev libev-devel \
             systemd systemd-devel zlib zlib-devel \
             libzstd libzstd-devel \
             lz4 lz4-devel libssh libssh-devel \
-            libcurl libcurl-devel \
             python3-docutils libatomic \
             bzip2 bzip2-devel \
             libarchive libarchive-devel
