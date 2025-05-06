@@ -39,16 +39,16 @@ pgmoneta_http_test(void)
    int port = 80;
    bool secure = false;
 
-   if (pgmoneta_http_connect(hostname, port, secure, &h))
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
    {
       printf("Failed to connect to %s:%d\n", hostname, port);
       return 1;
    }
 
    printf("Calling pgmoneta_http_get\n");
-   status = pgmoneta_http_get(h, hostname, "/get");
+   status = pgmoneta_http_get(h, (char*)hostname, "/get");
    printf("pgmoneta_http_get returned: %d\n", status);
-   
+
    if (status == 0)
    {
       printf("\nResponse Headers:\n%s\n", h->headers ? h->headers : "None");
@@ -77,14 +77,14 @@ pgmoneta_https_test(void)
    int port = 443;
    bool secure = true;
 
-   if (pgmoneta_http_connect(hostname, port, secure, &h))
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
    {
       printf("Failed to connect to %s:%d\n", hostname, port);
       return 1;
    }
 
    printf("Calling pgmoneta_http_get\n");
-   status = pgmoneta_http_get(h, hostname, "/get");
+   status = pgmoneta_http_get(h, (char*)hostname, "/get");
    printf("pgmoneta_http_get returned: %d\n", status);
 
    if (status == 0)
@@ -116,14 +116,14 @@ pgmoneta_http_post_test(void)
    bool secure = true;
    const char* test_data = "name=pgmoneta&version=1.0";
 
-   if (pgmoneta_http_connect(hostname, port, secure, &h))
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
    {
       printf("Failed to connect to %s:%d\n", hostname, port);
       return 1;
    }
 
    printf("Calling pgmoneta_http_post\n");
-   status = pgmoneta_http_post(h, hostname, "/post", test_data, strlen(test_data));
+   status = pgmoneta_http_post(h, (char*)hostname, "/post", (char*)test_data, strlen(test_data));
    printf("pgmoneta_http_post returned: %d\n", status);
 
    pgmoneta_http_disconnect(h);
@@ -145,14 +145,14 @@ pgmoneta_http_put_test(void)
    bool secure = true;
    const char* test_data = "This is a test file content for PUT request";
 
-   if (pgmoneta_http_connect(hostname, port, secure, &h))
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
    {
       printf("Failed to connect to %s:%d\n", hostname, port);
       return 1;
    }
 
    printf("Calling pgmoneta_http_put\n");
-   status = pgmoneta_http_put(h, hostname, "/put", test_data, strlen(test_data));
+   status = pgmoneta_http_put(h, (char*)hostname, "/put", (void*)test_data, strlen(test_data));
    printf("pgmoneta_http_put returned: %d\n", status);
 
    pgmoneta_http_disconnect(h);
@@ -192,7 +192,7 @@ pgmoneta_http_put_file_test(void)
 
    rewind(temp_file);
 
-   if (pgmoneta_http_connect(hostname, port, secure, &h))
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
    {
       printf("Failed to connect to %s:%d\n", hostname, port);
       fclose(temp_file);
@@ -200,7 +200,7 @@ pgmoneta_http_put_file_test(void)
    }
 
    printf("Calling pgmoneta_http_put_file\n");
-   status = pgmoneta_http_put_file(h, hostname, "/put", temp_file, data_len, "text/plain");
+   status = pgmoneta_http_put_file(h, (char*)hostname, "/put", temp_file, data_len, "text/plain");
    printf("pgmoneta_http_put_file returned: %d\n", status);
 
    pgmoneta_http_disconnect(h);
@@ -262,8 +262,8 @@ pgmoneta_s3_upload_test(void)
       return 1;
    }
 
-   char object_key[256];
-   sprintf(object_key, "%s/test_%ld.txt", s3_base_dir, (long)now);
+   char object_key[1024];
+   snprintf(object_key, sizeof(object_key), "%s/test_%ld.txt", s3_base_dir, (long)now);
    printf("S3 object key: %s\n", object_key);
 
    struct http* h = NULL;
@@ -324,7 +324,7 @@ pgmoneta_s3_upload_test(void)
    string_to_sign = pgmoneta_append(string_to_sign, "\n");
    string_to_sign = pgmoneta_append(string_to_sign, short_date);
    string_to_sign = pgmoneta_append(string_to_sign, "/");
-   string_to_sign = pgmoneta_append(string_to_sign, s3_aws_region);
+   string_to_sign = pgmoneta_append(string_to_sign, (char*)s3_aws_region);
    string_to_sign = pgmoneta_append(string_to_sign, "/s3/aws4_request\n");
    string_to_sign = pgmoneta_append(string_to_sign, canonical_request_sha256);
 
@@ -338,7 +338,7 @@ pgmoneta_s3_upload_test(void)
    int hmac_length = 0;
 
    key = pgmoneta_append(key, "AWS4");
-   key = pgmoneta_append(key, s3_secret_access_key);
+   key = pgmoneta_append(key, (char*)s3_secret_access_key);
 
    if (pgmoneta_generate_string_hmac_sha256_hash(key, strlen(key), short_date, SHORT_TIME_LENGTH - 1,
                                                  &date_key_hmac, &hmac_length))
@@ -347,7 +347,7 @@ pgmoneta_s3_upload_test(void)
       goto error;
    }
 
-   if (pgmoneta_generate_string_hmac_sha256_hash((char*)date_key_hmac, hmac_length, s3_aws_region,
+   if (pgmoneta_generate_string_hmac_sha256_hash((char*)date_key_hmac, hmac_length, (char*)s3_aws_region,
                                                  strlen(s3_aws_region), &date_region_key_hmac, &hmac_length))
    {
       printf("Failed to generate date-region key\n");
@@ -382,11 +382,11 @@ pgmoneta_s3_upload_test(void)
    printf("Signature: %s\n", signature_hex);
 
    auth_value = pgmoneta_append(auth_value, "AWS4-HMAC-SHA256 Credential=");
-   auth_value = pgmoneta_append(auth_value, s3_access_key_id);
+   auth_value = pgmoneta_append(auth_value, (char*)s3_access_key_id);
    auth_value = pgmoneta_append(auth_value, "/");
    auth_value = pgmoneta_append(auth_value, short_date);
    auth_value = pgmoneta_append(auth_value, "/");
-   auth_value = pgmoneta_append(auth_value, s3_aws_region);
+   auth_value = pgmoneta_append(auth_value, (char*)s3_aws_region);
    auth_value = pgmoneta_append(auth_value, "/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class,Signature=");
    auth_value = pgmoneta_append(auth_value, (char*)signature_hex);
 
@@ -397,8 +397,8 @@ pgmoneta_s3_upload_test(void)
    pgmoneta_http_add_header(h, "x-amz-date", long_date);
    pgmoneta_http_add_header(h, "x-amz-storage-class", "REDUCED_REDUNDANCY");
 
-   char s3_path[512];
-   sprintf(s3_path, "/%s", object_key);
+   char s3_path[2048];
+   snprintf(s3_path, sizeof(s3_path), "/%s", object_key);
    printf("S3 path for HTTP PUT: %s\n", s3_path);
 
    printf("Uploading file to S3...\n");
@@ -579,7 +579,7 @@ pgmoneta_azure_upload_test(void)
    }
 
    // Create a unique blob path for the test
-   char blob_path[256];
+   char blob_path[1024];
    sprintf(blob_path, "%s/test_%ld.txt", azure_base_dir, (long)now);
    printf("Azure blob path: %s\n", blob_path);
 
@@ -614,9 +614,9 @@ pgmoneta_azure_upload_test(void)
 
    string_to_sign = pgmoneta_append(string_to_sign, utc_date);
    string_to_sign = pgmoneta_append(string_to_sign, "\nx-ms-version:2021-08-06\n/");
-   string_to_sign = pgmoneta_append(string_to_sign, azure_storage_account);
+   string_to_sign = pgmoneta_append(string_to_sign, (char*)azure_storage_account);
    string_to_sign = pgmoneta_append(string_to_sign, "/");
-   string_to_sign = pgmoneta_append(string_to_sign, azure_container);
+   string_to_sign = pgmoneta_append(string_to_sign, (char*)azure_container);
    string_to_sign = pgmoneta_append(string_to_sign, "/");
    string_to_sign = pgmoneta_append(string_to_sign, blob_path);
 
@@ -625,7 +625,7 @@ pgmoneta_azure_upload_test(void)
    // Decode the shared key (base64)
    char* signing_key = NULL;
    size_t signing_key_length = 0;
-   pgmoneta_base64_decode(azure_shared_key, strlen(azure_shared_key), (void**)&signing_key, &signing_key_length);
+   pgmoneta_base64_decode((char*)azure_shared_key, strlen(azure_shared_key), (void**)&signing_key, &signing_key_length);
    printf("Decoded shared key length: %zu bytes\n", signing_key_length);
 
    // Create HMAC signature
@@ -649,14 +649,14 @@ pgmoneta_azure_upload_test(void)
    // Create authorization header
    char* auth_value = NULL;
    auth_value = pgmoneta_append(auth_value, "SharedKey ");
-   auth_value = pgmoneta_append(auth_value, azure_storage_account);
+   auth_value = pgmoneta_append(auth_value, (char*)azure_storage_account);
    auth_value = pgmoneta_append(auth_value, ":");
    auth_value = pgmoneta_append(auth_value, base64_signature);
    printf("Authorization header created\n");
 
    // Get the host - use same function as the working implementation
    char* azure_host = NULL;
-   azure_host = pgmoneta_append(azure_host, azure_storage_account);
+   azure_host = pgmoneta_append(azure_host, (char*)azure_storage_account);
    azure_host = pgmoneta_append(azure_host, ".blob.core.windows.net");
    printf("Azure host: %s\n", azure_host);
 
@@ -665,7 +665,7 @@ pgmoneta_azure_upload_test(void)
    azure_url = pgmoneta_append(azure_url, "https://");
    azure_url = pgmoneta_append(azure_url, azure_host);
    azure_url = pgmoneta_append(azure_url, "/");
-   azure_url = pgmoneta_append(azure_url, azure_container);
+   azure_url = pgmoneta_append(azure_url, (char*)azure_container);
    azure_url = pgmoneta_append(azure_url, "/");
    azure_url = pgmoneta_append(azure_url, blob_path);
    printf("Azure URL: %s\n", azure_url);
@@ -687,8 +687,8 @@ pgmoneta_azure_upload_test(void)
    printf("Added headers\n");
 
    // Create PUT path
-   char azure_put_path[512];
-   sprintf(azure_put_path, "/%s/%s", azure_container, blob_path);
+   char azure_put_path[2048];
+   snprintf(azure_put_path, sizeof(azure_put_path), "/%s/%s", azure_container, blob_path);
    printf("Azure PUT path: %s\n", azure_put_path);
 
    // Send PUT request with file

@@ -102,9 +102,6 @@ s3_storage_setup(char* name __attribute__((unused)), struct art* nodes)
    pgmoneta_log_debug("S3 storage engine (setup): %s/%s", config->common.servers[server].name, label);
 
    return 0;
-
-error:
-   return 1;
 }
 
 static int
@@ -425,14 +422,14 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
          printf("S3 HTTP status code: %d\n", status_code);
          if (status_code >= 200 && status_code < 300)
          {
-               printf("Successfully uploaded file to S3: %s\n", s3_path);
-               printf("Object URL: https://%s/%s\n", s3_host, s3_path);
+            printf("Successfully uploaded file to S3: %s\n", s3_path);
+            printf("Object URL: https://%s/%s\n", s3_host, s3_path);
          }
          else
          {
-               fprintf(stderr, "S3 upload failed with status code: %d\n", status_code);
-               fprintf(stderr, "Response headers: %s\n", http->headers);
-               fprintf(stderr, "Response body: %s\n", http->body ? http->body : "None");
+            fprintf(stderr, "S3 upload failed with status code: %d\n", status_code);
+            fprintf(stderr, "Response headers: %s\n", http->headers);
+            fprintf(stderr, "Response body: %s\n", http->body ? http->body : "None");
          }
       }
    }

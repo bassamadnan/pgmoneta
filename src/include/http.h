@@ -67,7 +67,7 @@ struct http
  * @param result The resulting HTTP structure
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result);
+int pgmoneta_http_connect(char* hostname, int port, bool secure, struct http** result);
 
 /**
  * Disconnect and clean up HTTP resources
@@ -81,7 +81,7 @@ void pgmoneta_http_disconnect(struct http* http);
  * @param name The header name
  * @param value The header value
  */
-void pgmoneta_http_add_header(struct http* http, const char* name, const char* value);
+void pgmoneta_http_add_header(struct http* http, char* name, char* value);
 
 /**
  * Read response data directly from a socket
@@ -99,7 +99,7 @@ int pgmoneta_http_direct_read(SSL* ssl, int socket, char** response_text);
  * @param path The path for the request
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_get(struct http* http, const char* hostname, const char* path);
+int pgmoneta_http_get(struct http* http, char* hostname, char* path);
 
 /**
  * Perform HTTP POST request
@@ -110,8 +110,8 @@ int pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
  * @param length The length of the data
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_post(struct http* http, const char* hostname, const char* path,
-                       const char* data, size_t length);
+int pgmoneta_http_post(struct http* http, char* hostname, char* path,
+                       char* data, size_t length);
 
 /**
  * Perform HTTP PUT request
@@ -122,7 +122,7 @@ int pgmoneta_http_post(struct http* http, const char* hostname, const char* path
  * @param length The length of the data
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
+int pgmoneta_http_put(struct http* http, char* hostname, char* path,
                       const void* data, size_t length);
 
 /**
@@ -135,7 +135,7 @@ int pgmoneta_http_put(struct http* http, const char* hostname, const char* path,
  * @param content_type The content type of the file (can be NULL for default)
  * @return 0 upon success, otherwise 1
  */
-int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type);
+int pgmoneta_http_put_file(struct http* http, char* hostname, char* path, FILE* file, size_t file_size, char* content_type);
 
 #ifdef __cplusplus
 }

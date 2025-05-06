@@ -31,21 +31,26 @@
 #include <http.h>
 #include <utils.h>
 #include <logging.h>
-#include <errno.h>
+#include <network.h>
+#include <security.h>
 
-void pgmoneta_http_add_header(struct http* http, const char* name, const char* value);
-static int build_http_header(int method, const char* path, char** request);
+/* system */
+#include <errno.h>
+#include <openssl/err.h>
+
+void pgmoneta_http_add_header(struct http* http, char* name, char* value);
+static int build_http_header(int method, char* path, char** request);
 static int extract_headers_body(char* response, struct http* http);
-int pgmoneta_http_get(struct http* http, const char* hostname, const char* path);
-int pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result);
-int pgmoneta_http_post(struct http* http, const char* hostname, const char* path, const char* data, size_t length);
-int pgmoneta_http_put(struct http* http, const char* hostname, const char* path, const void* data, size_t length);
-int pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type);
+int pgmoneta_http_get(struct http* http, char* hostname, char* path);
+int pgmoneta_http_connect(char* hostname, int port, bool secure, struct http** result);
+int pgmoneta_http_post(struct http* http, char* hostname, char* path, char* data, size_t length);
+int pgmoneta_http_put(struct http* http, char* hostname, char* path, const void* data, size_t length);
+int pgmoneta_http_put_file(struct http* http, char* hostname, char* path, FILE* file, size_t file_size, char* content_type);
 int pgmoneta_http_direct_read(SSL* ssl, int socket, char** response_text);
 void pgmoneta_http_disconnect(struct http* http);
 
 void
-pgmoneta_http_add_header(struct http* http, const char* name, const char* value)
+pgmoneta_http_add_header(struct http* http, char* name, char* value)
 {
    http->request_headers = pgmoneta_append(http->request_headers, name);
    http->request_headers = pgmoneta_append(http->request_headers, ": ");
@@ -54,7 +59,7 @@ pgmoneta_http_add_header(struct http* http, const char* name, const char* value)
 }
 
 static int
-build_http_header(int method, const char* path, char** request)
+build_http_header(int method, char* path, char** request)
 {
    char* r = NULL;
    *request = NULL;
@@ -137,7 +142,7 @@ extract_headers_body(char* response, struct http* http)
 }
 
 int
-pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
+pgmoneta_http_get(struct http* http, char* hostname, char* path)
 {
    pgmoneta_log_debug("Starting pgmoneta_http_get");
    struct message* msg_request = NULL;
@@ -147,7 +152,7 @@ pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    char* full_request = NULL;
    char* response = NULL;
    char* user_agent = NULL;
-   const char* endpoint = path ? path : "/get";
+   char* endpoint = path ? path : "/get";
 
    if (build_http_header(PGMONETA_HTTP_GET, endpoint, &request))
    {
@@ -254,7 +259,7 @@ error:
 }
 
 int
-pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http** result)
+pgmoneta_http_connect(char* hostname, int port, bool secure, struct http** result)
 {
    pgmoneta_log_debug("Connecting to %s:%d (secure: %d)", hostname, port, secure);
    struct http* h = NULL;
@@ -354,7 +359,7 @@ pgmoneta_http_connect(const char* hostname, int port, bool secure, struct http**
 }
 
 int
-pgmoneta_http_post(struct http* http, const char* hostname, const char* path, const char* data, size_t length)
+pgmoneta_http_post(struct http* http, char* hostname, char* path, char* data, size_t length)
 {
    pgmoneta_log_debug("Starting pgmoneta_http_post");
    struct message* msg_request = NULL;
@@ -476,7 +481,7 @@ error:
 }
 
 int
-pgmoneta_http_put(struct http* http, const char* hostname, const char* path, const void* data, size_t length)
+pgmoneta_http_put(struct http* http, char* hostname, char* path, const void* data, size_t length)
 {
    pgmoneta_log_debug("Starting pgmoneta_http_put");
    struct message* msg_request = NULL;
@@ -618,7 +623,7 @@ error:
 }
 
 int
-pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path, FILE* file, size_t file_size, const char* content_type)
+pgmoneta_http_put_file(struct http* http, char* hostname, char* path, FILE* file, size_t file_size, char* content_type)
 {
    pgmoneta_log_debug("Starting pgmoneta_http_put_file");
    struct message* msg_request = NULL;
@@ -652,8 +657,8 @@ pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path
    sprintf(content_length, "%zu", file_size);
    pgmoneta_http_add_header(http, "Content-Length", content_length);
 
-   /* default to application/octet-stream if not specified */ 
-   const char* type = content_type ? content_type : "application/octet-stream";
+   /* default to application/octet-stream if not specified */
+   char* type = content_type ? content_type : "application/octet-stream";
    pgmoneta_http_add_header(http, "Content-Type", type);
 
    header_part = pgmoneta_append(NULL, request);
@@ -832,7 +837,7 @@ pgmoneta_http_direct_read(SSL* ssl, int socket, char** response_text)
       else
       {
          bytes_read = read(socket, buffer, sizeof(buffer) - 1);
-         if (bytes_read < 0) 
+         if (bytes_read < 0)
          {
             if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
             {
