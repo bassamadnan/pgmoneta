@@ -29,14 +29,15 @@
 /* pgmoneta */
 #include <pgmoneta.h>
 #include <http.h>
-#include <utils.h>
 #include <logging.h>
 #include <network.h>
 #include <security.h>
+#include <utils.h>
 
 /* system */
 #include <errno.h>
 #include <openssl/err.h>
+#include <unistd.h>
 
 void pgmoneta_http_add_header(struct http* http, char* name, char* value);
 static int build_http_header(int method, char* path, char** request);
