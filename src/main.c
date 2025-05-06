@@ -56,7 +56,6 @@
 #include <verify.h>
 #include <wal.h>
 #include <zstandard_compression.h>
-#include <test.h>
 
 /* system */
 #include <err.h>
@@ -678,22 +677,6 @@ main(int argc, char** argv)
       ev_periodic_init(&retention, retention_cb, 0., config->retention_interval, 0);
       ev_periodic_start(main_loop, &retention);
    }
-
-   // if (!offline)
-   // {
-   //    if (!fork())
-   //    {
-   //       pgmoneta_memory_init();
-   //       pgmoneta_http_test();
-   //       pgmoneta_https_test();
-   //       pgmoneta_http_post_test();
-   //       pgmoneta_http_put_test();
-   //       pgmoneta_http_put_file_test();
-   //       // pgmoneta_s3_upload_test();
-   //       pgmoneta_azure_upload_test();
-   //       exit(0);
-   //    }
-   // }
 
    if (!offline)
    {
