@@ -33,60 +33,56 @@
 
 START_TEST(test_pgmoneta_http)
 {
-int found = 0;
-found = !pgmoneta_tsclient_execute_http();
-ck_assert_msg(found, "success status not found");
+   int found = 0;
+   found = !pgmoneta_tsclient_execute_http();
+   ck_assert_msg(found, "success status not found");
 }
 END_TEST
-
 START_TEST(test_pgmoneta_https)
 {
-int found = 0;
-found = !pgmoneta_tsclient_execute_https();
-ck_assert_msg(found, "success status not found");
+   int found = 0;
+   found = !pgmoneta_tsclient_execute_https();
+   ck_assert_msg(found, "success status not found");
 }
 END_TEST
-
 START_TEST(test_pgmoneta_http_post)
 {
-int found = 0;
-found = !pgmoneta_tsclient_execute_http_post();
-ck_assert_msg(found, "success status not found");
+   int found = 0;
+   found = !pgmoneta_tsclient_execute_http_post();
+   ck_assert_msg(found, "success status not found");
 }
 END_TEST
-
 START_TEST(test_pgmoneta_http_put)
 {
-int found = 0;
-found = !pgmoneta_tsclient_execute_http_put();
-ck_assert_msg(found, "success status not found");
+   int found = 0;
+   found = !pgmoneta_tsclient_execute_http_put();
+   ck_assert_msg(found, "success status not found");
 }
 END_TEST
-
 START_TEST(test_pgmoneta_http_put_file)
 {
-int found = 0;
-found = !pgmoneta_tsclient_execute_http_put_file();
-ck_assert_msg(found, "success status not found");
+   int found = 0;
+   found = !pgmoneta_tsclient_execute_http_put_file();
+   ck_assert_msg(found, "success status not found");
 }
 END_TEST
 
 Suite*
 pgmoneta_test3_suite()
 {
-Suite* s;
-TCase* tc_core;
-s = suite_create("pgmoneta_test3");
+   Suite* s;
+   TCase* tc_core;
+   s = suite_create("pgmoneta_test3");
 
-tc_core = tcase_create("Core");
+   tc_core = tcase_create("Core");
 
-tcase_set_timeout(tc_core, 60);
-tcase_add_test(tc_core, test_pgmoneta_http);
-tcase_add_test(tc_core, test_pgmoneta_https);
-tcase_add_test(tc_core, test_pgmoneta_http_post);
-tcase_add_test(tc_core, test_pgmoneta_http_put);
-tcase_add_test(tc_core, test_pgmoneta_http_put_file);
-suite_add_tcase(s, tc_core);
+   tcase_set_timeout(tc_core, 60);
+   tcase_add_test(tc_core, test_pgmoneta_http);
+   tcase_add_test(tc_core, test_pgmoneta_https);
+   tcase_add_test(tc_core, test_pgmoneta_http_post);
+   tcase_add_test(tc_core, test_pgmoneta_http_put);
+   tcase_add_test(tc_core, test_pgmoneta_http_put_file);
+   suite_add_tcase(s, tc_core);
 
-return s;
+   return s;
 }
