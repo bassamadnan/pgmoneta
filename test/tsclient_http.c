@@ -27,36 +27,153 @@
  *
  */
 
-#include <pgmoneta.h>
+ #include <pgmoneta.h>
 #include <http.h>
+#include <logging.h>
 #include <tsclient.h>
 
 int
 pgmoneta_tsclient_execute_http()
 {
-return 0;
+   int status;
+   struct http* h = NULL;
+
+   pgmoneta_init_logging();
+
+   const char* hostname = "postman-echo.com";
+   int port = 80;
+   bool secure = false;
+
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
+   {
+      return 1;
+   }
+
+   status = pgmoneta_http_get(h, (char*)hostname, "/get");
+   
+   pgmoneta_http_disconnect(h);
+   free(h);
+
+   return (status == 0) ? 0 : 1;
 }
 
 int
 pgmoneta_tsclient_execute_https()
 {
-return 0;
+   int status;
+   struct http* h = NULL;
+
+   pgmoneta_init_logging();
+
+   const char* hostname = "postman-echo.com";
+   int port = 443;
+   bool secure = true;
+
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
+   {
+      return 1;
+   }
+
+   status = pgmoneta_http_get(h, (char*)hostname, "/get");
+   
+   pgmoneta_http_disconnect(h);
+   free(h);
+
+   return (status == 0) ? 0 : 1;
 }
 
 int
 pgmoneta_tsclient_execute_http_post()
 {
-return 0;
+   int status;
+   struct http* h = NULL;
+
+   pgmoneta_init_logging();
+
+   const char* hostname = "postman-echo.com";
+   int port = 443;
+   bool secure = true;
+   const char* test_data = "name=pgmoneta&version=1.0";
+
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
+   {
+      return 1;
+   }
+
+   status = pgmoneta_http_post(h, (char*)hostname, "/post", (char*)test_data, strlen(test_data));
+   
+   pgmoneta_http_disconnect(h);
+   free(h);
+
+   return (status == 0) ? 0 : 1;
 }
 
 int
 pgmoneta_tsclient_execute_http_put()
 {
-return 0;
+   int status;
+   struct http* h = NULL;
+
+   pgmoneta_init_logging();
+
+   const char* hostname = "postman-echo.com";
+   int port = 443;
+   bool secure = true;
+   const char* test_data = "This is a test file content for PUT request";
+
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
+   {
+      return 1;
+   }
+
+   status = pgmoneta_http_put(h, (char*)hostname, "/put", (void*)test_data, strlen(test_data));
+   
+   pgmoneta_http_disconnect(h);
+   free(h);
+
+   return (status == 0) ? 0 : 1;
 }
 
 int
 pgmoneta_tsclient_execute_http_put_file()
 {
-return 0;
+   int status;
+   struct http* h = NULL;
+   FILE* temp_file = NULL;
+
+   pgmoneta_init_logging();
+
+   const char* hostname = "postman-echo.com";
+   int port = 443;
+   bool secure = true;
+   const char* test_data = "This is a test file content for PUT file request\nSecond line of test data\nThird line with some numbers: 12345";
+   size_t data_len = strlen(test_data);
+
+   temp_file = tmpfile();
+   if (temp_file == NULL)
+   {
+      return 1;
+   }
+
+   if (fwrite(test_data, 1, data_len, temp_file) != data_len)
+   {
+      fclose(temp_file);
+      return 1;
+   }
+
+   rewind(temp_file);
+
+   if (pgmoneta_http_connect((char*)hostname, port, secure, &h))
+   {
+      fclose(temp_file);
+      return 1;
+   }
+
+   status = pgmoneta_http_put_file(h, (char*)hostname, "/put", temp_file, data_len, "text/plain");
+   
+   pgmoneta_http_disconnect(h);
+   free(h);
+   fclose(temp_file);
+
+   return (status == 0) ? 0 : 1;
 }
