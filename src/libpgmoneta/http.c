@@ -145,6 +145,7 @@ pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    char* request = NULL;
    char* full_request = NULL;
    char* response = NULL;
+   char* user_agent = NULL;
    const char* endpoint = path ? path : "/get";
 
    if (build_http_header(PGMONETA_HTTP_GET, endpoint, &request))
@@ -154,7 +155,9 @@ pgmoneta_http_get(struct http* http, const char* hostname, const char* path)
    }
 
    pgmoneta_http_add_header(http, "Host", hostname);
-   pgmoneta_http_add_header(http, "User-Agent", "pgmoneta4/4");
+   user_agent = pgmoneta_append(user_agent, "pgmoneta/");
+   user_agent = pgmoneta_append(user_agent, VERSION);
+   pgmoneta_http_add_header(http, "User-Agent", user_agent);
    pgmoneta_http_add_header(http, "Accept", "text/*");
    pgmoneta_http_add_header(http, "Connection", "close");
 
@@ -213,6 +216,7 @@ req:
    free(full_request);
    free(response);
    free(msg_request);
+   free(user_agent);
 
    free(http->request_headers);
    http->request_headers = NULL;
@@ -236,6 +240,10 @@ error:
    if (msg_request)
    {
       free(msg_request);
+   }
+   if (user_agent)
+   {
+      free(user_agent);
    }
 
    free(http->request_headers);
@@ -354,6 +362,7 @@ pgmoneta_http_post(struct http* http, const char* hostname, const char* path, co
    char* request = NULL;
    char* full_request = NULL;
    char* response = NULL;
+   char* user_agent = NULL;
    char content_length[32];
 
    if (build_http_header(PGMONETA_HTTP_POST, path, &request))
@@ -363,7 +372,9 @@ pgmoneta_http_post(struct http* http, const char* hostname, const char* path, co
    }
 
    pgmoneta_http_add_header(http, "Host", hostname);
-   pgmoneta_http_add_header(http, "User-Agent", "pgmoneta4/4");
+   user_agent = pgmoneta_append(user_agent, "pgmoneta/");
+   user_agent = pgmoneta_append(user_agent, VERSION);
+   pgmoneta_http_add_header(http, "User-Agent", user_agent);
    pgmoneta_http_add_header(http, "Connection", "close");
 
    sprintf(content_length, "%zu", length);
@@ -427,6 +438,7 @@ req:
    free(full_request);
    free(response);
    free(msg_request);
+   free(user_agent);
 
    free(http->request_headers);
    http->request_headers = NULL;
@@ -451,6 +463,10 @@ error:
    {
       free(msg_request);
    }
+   if (user_agent)
+   {
+      free(user_agent);
+   }
 
    free(http->request_headers);
    http->request_headers = NULL;
@@ -468,6 +484,7 @@ pgmoneta_http_put(struct http* http, const char* hostname, const char* path, con
    char* request = NULL;
    char* full_request = NULL;
    char* response = NULL;
+   char* user_agent = NULL;
    char content_length[32];
 
    if (build_http_header(PGMONETA_HTTP_PUT, path, &request))
@@ -477,7 +494,9 @@ pgmoneta_http_put(struct http* http, const char* hostname, const char* path, con
    }
 
    pgmoneta_http_add_header(http, "Host", hostname);
-   pgmoneta_http_add_header(http, "User-Agent", "pgmoneta4/4");
+   user_agent = pgmoneta_append(user_agent, "pgmoneta/");
+   user_agent = pgmoneta_append(user_agent, VERSION);
+   pgmoneta_http_add_header(http, "User-Agent", user_agent);
    pgmoneta_http_add_header(http, "Connection", "close");
 
    sprintf(content_length, "%zu", length);
@@ -557,6 +576,7 @@ req:
    free(response);
    free(msg_request->data);
    free(msg_request);
+   free(user_agent);
 
    free(http->request_headers);
    http->request_headers = NULL;
@@ -585,6 +605,10 @@ error:
       }
       free(msg_request);
    }
+   if (user_agent)
+   {
+      free(user_agent);
+   }
 
    free(http->request_headers);
    http->request_headers = NULL;
@@ -602,6 +626,7 @@ pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path
    char* request = NULL;
    char* header_part = NULL;
    char* response = NULL;
+   char* user_agent = NULL;
    char content_length[32];
    void* file_buffer = NULL;
 
@@ -618,13 +643,15 @@ pgmoneta_http_put_file(struct http* http, const char* hostname, const char* path
    }
 
    pgmoneta_http_add_header(http, "Host", hostname);
-   pgmoneta_http_add_header(http, "User-Agent", "pgmoneta4/4");
+   user_agent = pgmoneta_append(user_agent, "pgmoneta/");
+   user_agent = pgmoneta_append(user_agent, VERSION);
+   pgmoneta_http_add_header(http, "User-Agent", user_agent);
    pgmoneta_http_add_header(http, "Connection", "close");
 
    sprintf(content_length, "%zu", file_size);
    pgmoneta_http_add_header(http, "Content-Length", content_length);
 
-   // default to application/octet-stream if not specified
+   /* default to application/octet-stream if not specified */ 
    const char* type = content_type ? content_type : "application/octet-stream";
    pgmoneta_http_add_header(http, "Content-Type", type);
 
@@ -733,6 +760,7 @@ req:
    free(file_buffer);
    free(full_request);
    free(msg_request);
+   free(user_agent);
 
    free(http->request_headers);
    http->request_headers = NULL;
@@ -764,6 +792,10 @@ error:
          free(msg_request->data);
       }
       free(msg_request);
+   }
+   if (user_agent)
+   {
+      free(user_agent);
    }
 
    free(http->request_headers);

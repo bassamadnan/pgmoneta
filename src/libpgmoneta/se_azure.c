@@ -425,8 +425,38 @@ azure_send_upload_request(char* local_root, char* azure_root, char* relative_pat
    res = pgmoneta_http_put_file(http, azure_host, azure_put_path, file, file_info.st_size, "application/octet-stream");
    if (res != 0)
    {
-      pgmoneta_log_error("Azure upload failed for %s", local_path);
-      goto error;
+       pgmoneta_log_error("Azure upload failed for %s", local_path);
+       goto error;
+   }
+   else
+   {
+       int status_code = 0;
+       if (http->headers && sscanf(http->headers, "HTTP/1.1 %d", &status_code) == 1)
+       {
+           pgmoneta_log_debug("Azure HTTP status code: %d", status_code);
+           if (status_code >= 200 && status_code < 300)
+           {
+               pgmoneta_log_info("Successfully uploaded file to Azure: %s", azure_path);
+               
+               char* azure_url = NULL;
+               azure_url = pgmoneta_append(azure_url, "https://");
+               azure_url = pgmoneta_append(azure_url, azure_host);
+               azure_url = pgmoneta_append(azure_url, "/");
+               azure_url = pgmoneta_append(azure_url, config->azure_container);
+               azure_url = pgmoneta_append(azure_url, "/");
+               azure_url = pgmoneta_append(azure_url, azure_path);
+               
+               pgmoneta_log_info("Blob URL: %s", azure_url);
+               free(azure_url);
+           }
+           else
+           {
+               pgmoneta_log_error("Azure upload failed with status code: %d", status_code);
+               pgmoneta_log_error("Response headers: %s", http->headers ? http->headers : "None");
+               pgmoneta_log_error("Response body: %s", http->body ? http->body : "None");
+               goto error;
+           }
+       }
    }
 
    free(local_path);

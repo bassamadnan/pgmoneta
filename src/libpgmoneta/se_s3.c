@@ -417,6 +417,25 @@ s3_send_upload_request(char* local_root, char* s3_root, char* relative_path)
 
    // Perform the PUT request with file
    res = pgmoneta_http_put_file(http, s3_host, s3_put_path, file, file_info.st_size, "application/octet-stream");
+   if (res == 0)
+   {
+      int status_code = 0;
+      if (http->headers && sscanf(http->headers, "HTTP/1.1 %d", &status_code) == 1)
+      {
+         printf("S3 HTTP status code: %d\n", status_code);
+         if (status_code >= 200 && status_code < 300)
+         {
+               printf("Successfully uploaded file to S3: %s\n", s3_path);
+               printf("Object URL: https://%s/%s\n", s3_host, s3_path);
+         }
+         else
+         {
+               fprintf(stderr, "S3 upload failed with status code: %d\n", status_code);
+               fprintf(stderr, "Response headers: %s\n", http->headers);
+               fprintf(stderr, "Response body: %s\n", http->body ? http->body : "None");
+         }
+      }
+   }
    if (res != 0)
    {
       fprintf(stderr, "pgmoneta_http_put_file() failed\n");

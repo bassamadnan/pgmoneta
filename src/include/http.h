@@ -81,7 +81,7 @@ void pgmoneta_http_disconnect(struct http* http);
  * @param name The header name
  * @param value The header value
  */
-void pgmoneta_http_add_header2(struct http* http, const char* name, const char* value);
+void pgmoneta_http_add_header(struct http* http, const char* name, const char* value);
 
 /**
  * Read response data directly from a socket
