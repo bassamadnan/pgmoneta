@@ -48,6 +48,16 @@ pgmoneta_http_test(void)
    printf("Calling pgmoneta_http_get\n");
    status = pgmoneta_http_get(h, hostname, "/get");
    printf("pgmoneta_http_get returned: %d\n", status);
+   
+   if (status == 0)
+   {
+      printf("\nResponse Headers:\n%s\n", h->headers ? h->headers : "None");
+      printf("\nResponse Body:\n%s\n", h->body ? h->body : "None");
+   }
+   else
+   {
+      printf("Request failed, no response to display\n");
+   }
 
    pgmoneta_http_disconnect(h);
    free(h);
@@ -76,6 +86,16 @@ pgmoneta_https_test(void)
    printf("Calling pgmoneta_http_get\n");
    status = pgmoneta_http_get(h, hostname, "/get");
    printf("pgmoneta_http_get returned: %d\n", status);
+
+   if (status == 0)
+   {
+      printf("\nResponse Headers:\n%s\n", h->headers ? h->headers : "None");
+      printf("\nResponse Body:\n%s\n", h->body ? h->body : "None");
+   }
+   else
+   {
+      printf("Request failed, no response to display\n");
+   }
 
    pgmoneta_http_disconnect(h);
    free(h);

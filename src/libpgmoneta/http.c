@@ -31,6 +31,7 @@
 #include <http.h>
 #include <utils.h>
 #include <logging.h>
+#include <errno.h>
 
 void pgmoneta_http_add_header(struct http* http, const char* name, const char* value);
 static int build_http_header(int method, const char* path, char** request);
@@ -831,7 +832,15 @@ pgmoneta_http_direct_read(SSL* ssl, int socket, char** response_text)
       else
       {
          bytes_read = read(socket, buffer, sizeof(buffer) - 1);
-         if (bytes_read <= 0)
+         if (bytes_read < 0) 
+         {
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+               continue;
+            }
+            break;
+         }
+         else if (bytes_read == 0)
          {
             break;
          }
