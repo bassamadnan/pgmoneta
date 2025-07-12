@@ -63,10 +63,16 @@ echo_server_thread(void* arg)
       int client_fd = accept(server->socket_fd, (struct sockaddr*)&client_addr, &client_len);
       if (client_fd < 0)
       {
-         if (server->running)
+         if (!server->running)
          {
-            continue;
+            break;
          }
+         continue;
+      }
+
+      if (!server->running)
+      {
+         close(client_fd);
          break;
       }
 
@@ -76,13 +82,20 @@ echo_server_thread(void* arg)
       if (bytes_read > 0)
       {
          buffer[bytes_read] = '\0';
+         printf("Echo server received request:\n%s\n", buffer);
+         fflush(stdout);
+         const char* response_body = "{\"status\":\"ok\"}";
+         char response[1024];
+         snprintf(response, sizeof(response),
+                  "HTTP/1.1 200 OK\r\n"
+                  "Content-Type: application/json\r\n"
+                  "Content-Length: %zu\r\n"
+                  "Connection: close\r\n"
+                  "\r\n"
+                  "%s", strlen(response_body), response_body);
 
-         char response[] = "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: application/json\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "{\"status\":\"ok\"}\n";
-
+         printf("Echo server sending response:\n%s\n", response);
+         fflush(stdout);
          send(client_fd, response, strlen(response), 0);
       }
 
@@ -174,7 +187,7 @@ stop_echo_server(void)
       test_server->socket_fd = -1;
    }
 
-   pthread_detach(test_server->thread);
+   pthread_join(test_server->thread, NULL);
 
    free(test_server);
    test_server = NULL;
