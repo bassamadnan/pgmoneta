@@ -30,7 +30,7 @@
 
 #include "testcases/pgmoneta_test_1.h"
 #include "testcases/pgmoneta_test_2.h"
-// #include "testcases/pgmoneta_test_3.h"
+#include "testcases/pgmoneta_test_3.h"
 #include "testcases/pgmoneta_test_4.h"
 #include "testcases/pgmoneta_test_5.h"
 
@@ -47,7 +47,7 @@ main(int argc, char* argv[])
    int number_failed;
    Suite* s1;
    Suite* s2;
-   // Suite* s3;
+   Suite* s3;
    Suite* s4;
    Suite* s5;
    SRunner* sr;
@@ -59,13 +59,13 @@ main(int argc, char* argv[])
 
    s1 = pgmoneta_test1_suite();
    s2 = pgmoneta_test2_suite();
-   // s3 = pgmoneta_test3_suite();
+   s3 = pgmoneta_test3_suite();
    s4 = pgmoneta_test4_suite();
    s5 = pgmoneta_test5_suite();
 
    sr = srunner_create(s1);
    srunner_add_suite(sr, s2);
-   // srunner_add_suite(sr, s3);
+   srunner_add_suite(sr, s3);
    srunner_add_suite(sr, s4);
    srunner_add_suite(sr, s5);
 
